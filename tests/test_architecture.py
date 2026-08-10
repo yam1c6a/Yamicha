@@ -42,6 +42,19 @@ class ArchitectureCheckTest(unittest.TestCase):
         self.assertEqual(violations[0].source_area, "body")
         self.assertEqual(violations[0].target_area, "life")
 
+    def test_root_reexport_import_cannot_bypass_dependency_direction(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            source_root = Path(directory) / "src"
+            module = source_root / "yamicha" / "body" / "invalid.py"
+            module.parent.mkdir(parents=True)
+            module.write_text("from yamicha import life\n", encoding="utf-8")
+
+            violations = find_violations(source_root)
+
+        self.assertEqual(len(violations), 1)
+        self.assertEqual(violations[0].source_area, "body")
+        self.assertEqual(violations[0].target_area, "life")
+
 
 if __name__ == "__main__":
     unittest.main()

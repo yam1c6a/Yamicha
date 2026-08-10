@@ -61,17 +61,21 @@ def _imported_modules(
             modules.extend((alias.name, node.lineno) for alias in node.names)
         elif isinstance(node, ast.ImportFrom):
             if node.level == 0 and node.module:
-                modules.append((node.module, node.lineno))
+                resolved = node.module
             elif node.level > 0:
-                modules.append(
-                    (
-                        _resolve_relative_module(
-                            current_package,
-                            node.module,
-                            node.level,
-                        ),
-                        node.lineno,
-                    )
+                resolved = _resolve_relative_module(
+                    current_package,
+                    node.module,
+                    node.level,
+                )
+            else:
+                continue
+            modules.append((resolved, node.lineno))
+            if resolved == "yamicha":
+                modules.extend(
+                    (f"yamicha.{alias.name}", node.lineno)
+                    for alias in node.names
+                    if alias.name != "*"
                 )
     return modules
 
