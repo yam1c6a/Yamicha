@@ -1,0 +1,11 @@
+[project]
+name = "yamicha"
+version = "0.1.0"
+description = "A minimal implementation foundation for Yamicha"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = []
+
+[tool.yamicha]
+source-root = "src"
+test-root = "tests"
