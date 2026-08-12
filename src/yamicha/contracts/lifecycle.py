@@ -64,6 +64,11 @@ class StateSnapshot:
 
 
 class DecisionDirection(StrEnum):
+    RESPOND = "respond"
+    CONFIRM = "confirm"
+    HOLD = "hold"
+    REFUSE = "refuse"
+    WAIT = "wait"
     NO_ACTION = "no_action"
 
 
