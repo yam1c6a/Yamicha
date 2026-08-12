@@ -2,10 +2,13 @@
 
 from .composition import YamichaComposition, make_stage1_composition
 from .stage2 import Stage2System, make_stage2_system
+from .stage3 import Stage3System, make_stage3_system
 
 __all__ = [
     "Stage2System",
+    "Stage3System",
     "YamichaComposition",
     "make_stage1_composition",
     "make_stage2_system",
+    "make_stage3_system",
 ]
