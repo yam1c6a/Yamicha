@@ -1,9 +1,10 @@
-"""Interactive console that runs the complete stage-5 dialogue path."""
+"""Interactive console that runs the latest implemented dialogue path."""
 
 from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import TextIO
 from uuid import uuid4
 
@@ -11,7 +12,8 @@ from yamicha.adapters.channels import ConsoleChannel
 from yamicha.body.runtime import RuntimeStatus
 from yamicha.contracts import ExternalTime, InputDisposition
 
-from .stage6 import Stage6System, make_stage6_system
+from .stage6 import Stage6System
+from .stage7 import Stage7System, make_stage7_system
 
 
 class InteractiveConsole:
@@ -20,7 +22,7 @@ class InteractiveConsole:
         *,
         input_stream: TextIO,
         output_stream: TextIO,
-        system: Stage6System,
+        system: Stage6System | Stage7System,
         input_id_factory: Callable[[], str] | None = None,
         external_time_factory: Callable[[], ExternalTime] | None = None,
         source_id: str = "local-console",
@@ -38,7 +40,8 @@ class InteractiveConsole:
         self._source_id = source_id
 
     def run(self) -> int:
-        self._output.write("Yamicha 対話コンソール（段階6）\n")
+        stage_label = getattr(self._system, "stage_label", 6)
+        self._output.write(f"Yamicha 対話コンソール（段階{stage_label}）\n")
         self._output.write("終了するには /quit を入力してください。\n")
         try:
             while True:
@@ -77,6 +80,9 @@ class InteractiveConsole:
         return input_id
 
     def _stop_started_system(self) -> None:
+        if isinstance(self._system, Stage7System):
+            self._system.shutdown()
+            return
         if self._system.runtime.status not in {
             RuntimeStatus.NOT_STARTED,
             RuntimeStatus.STOPPED,
@@ -88,9 +94,13 @@ def run_interactive_console(
     *,
     input_stream: TextIO,
     output_stream: TextIO,
+    persistence_path: str | Path = Path(".yamicha/yamicha.sqlite3"),
 ) -> int:
     source_id = "local-console"
-    system = make_stage6_system(known_counterpart_id=source_id)
+    system = make_stage7_system(
+        persistence_path=persistence_path,
+        known_counterpart_id=source_id,
+    )
     return InteractiveConsole(
         input_stream=input_stream,
         output_stream=output_stream,
