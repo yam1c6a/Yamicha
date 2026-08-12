@@ -5,9 +5,11 @@ from __future__ import annotations
 from typing import TextIO
 
 from yamicha.contracts import (
+    DialogueOutput,
     ExternalTime,
     InputDisposition,
     InputProcessingOutcome,
+    OutputReleaseStatus,
     RawTextInput,
     SourceVerification,
 )
@@ -48,3 +50,9 @@ class ConsoleChannel:
             self._output.write(
                 f"error: {outcome.disposition.value}: {reason}\n"
             )
+
+    def show_dialogue_output(self, output: DialogueOutput) -> None:
+        if output.status is OutputReleaseStatus.RELEASED:
+            self._output.write(f"yamicha: {output.text}\n")
+        elif output.status is OutputReleaseStatus.BLOCKED:
+            self._output.write(f"output blocked: {output.reason}\n")
