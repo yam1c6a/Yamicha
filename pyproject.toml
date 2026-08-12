@@ -6,6 +6,9 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []
 
+[project.scripts]
+yamicha = "yamicha.__main__:main"
+
 [tool.yamicha]
 source-root = "src"
 test-root = "tests"
