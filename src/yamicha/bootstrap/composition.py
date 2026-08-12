@@ -1,4 +1,4 @@
-"""Construct all stage-1 responsibilities from one composition root."""
+"""Construct complete responsibility sets from one composition root."""
 
 from __future__ import annotations
 
