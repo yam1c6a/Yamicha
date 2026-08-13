@@ -213,14 +213,23 @@ def make_stage8_system(
     known_counterpart_id: str = "human-001",
     authorized_input_sources: tuple[str, ...] | None = None,
     normal_dialogue_output_enabled: bool = True,
+    _configuration_version: str = CONFIGURATION_VERSION,
+    _upgrade_from_configuration_versions: tuple[str, ...] = ("stage7-v1",),
+    _sensation_factory: Callable[..., Stage3Sensation] = Stage3Sensation,
+    _core_factory: Callable[..., Stage8Core] = Stage8Core,
+    _judgment_factory: Callable[..., Stage8Judgment] = Stage8Judgment,
+    _sensation_options: dict[str, object] | None = None,
+    _core_options: dict[str, object] | None = None,
+    _judgment_options: dict[str, object] | None = None,
 ) -> Stage8System:
     now_factory = persistence_time_factory or (
         lambda: ExternalTime(datetime.now(UTC))
     )
     runtime = Stage2Runtime(clock=clock, id_factory=runtime_id_factory)
-    sensation = Stage3Sensation(
+    sensation = _sensation_factory(
         reception_id_factory=reception_id_factory,
         event_id_factory=event_id_factory,
+        **(_sensation_options or {}),
     )
     state = Stage7State()
     memory = Stage7Memory(
@@ -229,7 +238,7 @@ def make_stage8_system(
         memory_item_id_factory=memory_item_id_factory,
     )
     relationship = Stage7Relationship(known_counterpart_id=known_counterpart_id)
-    core = Stage8Core(
+    core = _core_factory(
         state=state,
         memory=memory,
         relationship=relationship,
@@ -239,20 +248,24 @@ def make_stage8_system(
         record_entry_id_factory=record_entry_id_factory,
         release_finalization_id_factory=release_finalization_id_factory,
         release_proposal_id_factory=release_proposal_id_factory,
+        **(_core_options or {}),
     )
-    judgment = Stage8Judgment(
+    judgment = _judgment_factory(
         candidate_id_factory=retention_candidate_id_factory,
         release_evaluation_id_factory=release_evaluation_id_factory,
+        **(_judgment_options or {}),
     )
     language = Stage5Language(artifact_id_factory=expression_artifact_id_factory)
     store, recovery = SQLitePersistenceStore.open(
         persistence_path,
-        configuration_version=CONFIGURATION_VERSION,
+        configuration_version=_configuration_version,
         subject_id_factory=subject_id_factory,
         session_id_factory=session_id_factory,
         now_factory=now_factory,
         require_existing=require_existing_persistence,
-        upgrade_from_configuration_versions=("stage7-v1",),
+        upgrade_from_configuration_versions=(
+            _upgrade_from_configuration_versions
+        ),
     )
     try:
         store.initialize_protection_storage(

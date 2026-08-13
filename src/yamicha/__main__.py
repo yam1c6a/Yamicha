@@ -1,4 +1,4 @@
-"""Run Yamicha's stage-5 interactive console."""
+"""Run Yamicha's latest interactive console."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ from yamicha.bootstrap import run_interactive_console
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Yamicha 対話コンソール（段階8）")
+    parser = argparse.ArgumentParser(description="Yamicha 対話コンソール（段階9）")
     parser.add_argument(
         "--db",
         type=Path,

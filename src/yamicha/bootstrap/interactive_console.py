@@ -14,7 +14,8 @@ from yamicha.contracts import ExternalTime, InputDisposition, ProtectionMode
 
 from .stage6 import Stage6System
 from .stage7 import Stage7System
-from .stage8 import Stage8System, make_stage8_system
+from .stage8 import Stage8System
+from .stage9 import Stage9System, make_stage9_system
 
 
 class InteractiveConsole:
@@ -23,7 +24,7 @@ class InteractiveConsole:
         *,
         input_stream: TextIO,
         output_stream: TextIO,
-        system: Stage6System | Stage7System | Stage8System,
+        system: Stage6System | Stage7System | Stage8System | Stage9System,
         input_id_factory: Callable[[], str] | None = None,
         external_time_factory: Callable[[], ExternalTime] | None = None,
         source_id: str = "local-console",
@@ -106,9 +107,10 @@ def run_interactive_console(
     persistence_path: str | Path = Path(".yamicha/yamicha.sqlite3"),
 ) -> int:
     source_id = "local-console"
-    system = make_stage8_system(
+    system = make_stage9_system(
         persistence_path=persistence_path,
         known_counterpart_id=source_id,
+        capability_authority_id=source_id,
     )
     return InteractiveConsole(
         input_stream=input_stream,

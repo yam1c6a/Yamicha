@@ -12,6 +12,9 @@ from pathlib import Path
 from uuid import uuid4
 
 from yamicha.contracts import (
+    CapabilityExecutionRecord,
+    CapabilityResult,
+    CapabilityResultStatus,
     ExternalTime,
     InitializationKind,
     PersistenceIdentity,
@@ -469,6 +472,147 @@ class SQLitePersistenceStore:
             previous_hash = expected
         return tuple(records)
 
+    def initialize_capability_storage(self) -> None:
+        self._ensure_open()
+        self._connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS capability_executions(
+                idempotency_key TEXT PRIMARY KEY,
+                request_id TEXT NOT NULL UNIQUE,
+                request_fingerprint TEXT NOT NULL,
+                status TEXT NOT NULL CHECK(status IN ('reserved', 'completed')),
+                result_status TEXT,
+                reserved_at TEXT NOT NULL,
+                completed_at TEXT,
+                record_hash TEXT NOT NULL
+            )
+            """
+        )
+
+    def reserve_capability_execution(
+        self,
+        *,
+        idempotency_key: str,
+        request_id: str,
+        request_fingerprint: str,
+        reserved_at: ExternalTime,
+    ) -> bool:
+        self._ensure_open()
+        record = CapabilityExecutionRecord(
+            idempotency_key=idempotency_key,
+            request_id=request_id,
+            request_fingerprint=request_fingerprint,
+            status="reserved",
+            result_status=None,
+            reserved_at=reserved_at,
+            completed_at=None,
+        )
+        try:
+            self._connection.execute(
+                """
+                INSERT INTO capability_executions(
+                    idempotency_key, request_id, request_fingerprint, status,
+                    result_status, reserved_at, completed_at, record_hash
+                ) VALUES (?, ?, ?, 'reserved', NULL, ?, NULL, ?)
+                """,
+                (
+                    record.idempotency_key,
+                    record.request_id,
+                    record.request_fingerprint,
+                    record.reserved_at.value.isoformat(),
+                    self._capability_record_hash(record),
+                ),
+            )
+        except sqlite3.IntegrityError:
+            return False
+        except sqlite3.DatabaseError as error:
+            raise PersistenceCommitError(
+                "capability execution reservation failed"
+            ) from error
+        return True
+
+    def complete_capability_execution(self, result: CapabilityResult) -> None:
+        self._ensure_open()
+        row = self._connection.execute(
+            """
+            SELECT request_fingerprint, reserved_at
+            FROM capability_executions
+            WHERE idempotency_key = ? AND request_id = ? AND status = 'reserved'
+            """,
+            (result.idempotency_key, result.request_id),
+        ).fetchone()
+        if row is None:
+            raise PersistenceConsistencyError(
+                "capability result has no matching execution reservation"
+            )
+        record = CapabilityExecutionRecord(
+            idempotency_key=result.idempotency_key,
+            request_id=result.request_id,
+            request_fingerprint=str(row["request_fingerprint"]),
+            status="completed",
+            result_status=result.status,
+            reserved_at=ExternalTime(datetime.fromisoformat(row["reserved_at"])),
+            completed_at=result.completed_at,
+        )
+        try:
+            cursor = self._connection.execute(
+                """
+                UPDATE capability_executions
+                SET status = 'completed', result_status = ?, completed_at = ?,
+                    record_hash = ?
+                WHERE idempotency_key = ? AND request_id = ? AND status = 'reserved'
+                """,
+                (
+                    result.status.value,
+                    result.completed_at.value.isoformat(),
+                    self._capability_record_hash(record),
+                    result.idempotency_key,
+                    result.request_id,
+                ),
+            )
+        except sqlite3.DatabaseError as error:
+            raise PersistenceCommitError(
+                "capability execution result write failed"
+            ) from error
+        if cursor.rowcount != 1:
+            raise PersistenceConsistencyError(
+                "capability execution reservation changed before completion"
+            )
+
+    def capability_execution_records(
+        self,
+    ) -> tuple[CapabilityExecutionRecord, ...]:
+        self._ensure_open()
+        rows = self._connection.execute(
+            "SELECT * FROM capability_executions ORDER BY rowid"
+        ).fetchall()
+        records: list[CapabilityExecutionRecord] = []
+        for row in rows:
+            result_status = (
+                None
+                if row["result_status"] is None
+                else CapabilityResultStatus(row["result_status"])
+            )
+            record = CapabilityExecutionRecord(
+                idempotency_key=str(row["idempotency_key"]),
+                request_id=str(row["request_id"]),
+                request_fingerprint=str(row["request_fingerprint"]),
+                status=str(row["status"]),
+                result_status=result_status,
+                reserved_at=ExternalTime(datetime.fromisoformat(row["reserved_at"])),
+                completed_at=(
+                    None
+                    if row["completed_at"] is None
+                    else ExternalTime(datetime.fromisoformat(row["completed_at"]))
+                ),
+            )
+            if row["record_hash"] != self._capability_record_hash(record):
+                raise PersistenceCorruptionError(
+                    "capability execution record hash does not match"
+                )
+            records.append(record)
+        return tuple(records)
+
     def close(self) -> None:
         if not self._closed:
             self._connection.close()
@@ -830,6 +974,32 @@ class SQLitePersistenceStore:
                 "activation_id": activation_id,
                 "version": version,
             },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _capability_record_hash(record: CapabilityExecutionRecord) -> str:
+        payload = json.dumps(
+            {
+                "idempotency_key": record.idempotency_key,
+                "request_id": record.request_id,
+                "request_fingerprint": record.request_fingerprint,
+                "status": record.status,
+                "result_status": (
+                    None
+                    if record.result_status is None
+                    else record.result_status.value
+                ),
+                "reserved_at": record.reserved_at.value.isoformat(),
+                "completed_at": (
+                    None
+                    if record.completed_at is None
+                    else record.completed_at.value.isoformat()
+                ),
+            },
+            ensure_ascii=False,
             sort_keys=True,
             separators=(",", ":"),
         )
