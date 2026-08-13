@@ -18,6 +18,7 @@ from yamicha.contracts import (
     MemoryPersistenceSnapshot,
     OperatingState,
     PersistenceSnapshot,
+    ProtectionMode,
     ProtectionPersistenceSnapshot,
     RecordEntry,
     RecordKind,
@@ -241,6 +242,9 @@ def _snapshot_to_data(snapshot: PersistenceSnapshot) -> dict[str, Any]:
                 snapshot.protection.normal_dialogue_output_enabled
             ),
             "version": snapshot.protection.version,
+            "mode": snapshot.protection.mode.value,
+            "definition_version": snapshot.protection.definition_version,
+            "activation_id": snapshot.protection.activation_id,
         },
     }
 
@@ -293,5 +297,14 @@ def _snapshot_from_data(data: dict[str, Any]) -> PersistenceSnapshot:
                 protection["normal_dialogue_output_enabled"]
             ),
             version=int(protection["version"]),
+            mode=ProtectionMode(protection.get("mode", "normal")),
+            definition_version=str(
+                protection.get("definition_version", "stage7-protection-v1")
+            ),
+            activation_id=(
+                None
+                if protection.get("activation_id") is None
+                else str(protection["activation_id"])
+            ),
         ),
     )

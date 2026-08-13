@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import sqlite3
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import UTC, datetime
 from pathlib import Path
 from uuid import uuid4
@@ -16,6 +18,10 @@ from yamicha.contracts import (
     PersistenceOpenResult,
     PersistenceSnapshot,
     PreviousExit,
+    ProtectionAuditKind,
+    ProtectionAuditRecord,
+    ProtectionDecision,
+    ProtectionMode,
 )
 
 from .codec import decode_snapshot, encode_snapshot
@@ -60,6 +66,7 @@ class SQLitePersistenceStore:
         session_id_factory: Callable[[], str] | None = None,
         now_factory: Callable[[], ExternalTime] | None = None,
         require_existing: bool = False,
+        upgrade_from_configuration_versions: tuple[str, ...] = (),
     ) -> tuple[SQLitePersistenceStore, PersistenceOpenResult]:
         database_path = Path(path)
         if require_existing and not database_path.is_file():
@@ -84,6 +91,9 @@ class SQLitePersistenceStore:
                 session_id_factory=session_id_factory or (lambda: str(uuid4())),
                 now_factory=now_factory
                 or (lambda: ExternalTime(datetime.now(UTC))),
+                upgrade_from_configuration_versions=(
+                    upgrade_from_configuration_versions
+                ),
             )
         except Exception:
             store.close()
@@ -156,6 +166,309 @@ class SQLitePersistenceStore:
         if cursor.rowcount != 1:
             raise PersistenceConsistencyError("persistence session is not running")
 
+    def initialize_protection_storage(
+        self,
+        *,
+        definition_version: str,
+        initialized_at: ExternalTime,
+    ) -> None:
+        self._ensure_open()
+        if not definition_version.strip():
+            raise ValueError("protection definition version must not be empty")
+        self._connection.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS protection_control(
+                singleton INTEGER PRIMARY KEY CHECK(singleton = 1),
+                mode TEXT NOT NULL CHECK(mode IN ('normal', 'protected')),
+                definition_version TEXT NOT NULL,
+                activation_id TEXT,
+                updated_at TEXT NOT NULL,
+                version INTEGER NOT NULL,
+                control_hash TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS protection_execution_reservations(
+                observation_id TEXT PRIMARY KEY,
+                reservation_id TEXT NOT NULL UNIQUE,
+                operation_id TEXT NOT NULL,
+                reserved_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS protection_audit(
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                record_id TEXT NOT NULL UNIQUE,
+                occurred_at TEXT NOT NULL,
+                kind TEXT NOT NULL,
+                actor TEXT NOT NULL,
+                target TEXT NOT NULL,
+                decision TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                correlation_id TEXT,
+                previous_hash TEXT NOT NULL,
+                record_hash TEXT NOT NULL UNIQUE
+            );
+            """
+        )
+        row = self._connection.execute(
+            "SELECT definition_version FROM protection_control WHERE singleton = 1"
+        ).fetchone()
+        if row is None:
+            control_hash = self._protection_control_hash(
+                ProtectionMode.NORMAL,
+                definition_version,
+                None,
+                1,
+            )
+            self._connection.execute(
+                """
+                INSERT INTO protection_control(
+                    singleton, mode, definition_version, activation_id,
+                    updated_at, version, control_hash
+                ) VALUES (1, 'normal', ?, NULL, ?, 1, ?)
+                """,
+                (
+                    definition_version,
+                    initialized_at.value.isoformat(),
+                    control_hash,
+                ),
+            )
+        elif row["definition_version"] != definition_version:
+            raise PersistenceConsistencyError(
+                "stored fixed protection definition version does not match"
+            )
+
+    def protection_control_state(self) -> tuple[ProtectionMode, str, str | None, int]:
+        self._ensure_open()
+        row = self._connection.execute(
+            """
+            SELECT mode, definition_version, activation_id, version, control_hash
+            FROM protection_control WHERE singleton = 1
+            """
+        ).fetchone()
+        if row is None:
+            raise PersistenceConsistencyError("protection control is not initialized")
+        mode = ProtectionMode(row["mode"])
+        definition_version = str(row["definition_version"])
+        activation_id = (
+            None if row["activation_id"] is None else str(row["activation_id"])
+        )
+        version = int(row["version"])
+        if row["control_hash"] != self._protection_control_hash(
+            mode,
+            definition_version,
+            activation_id,
+            version,
+        ):
+            raise PersistenceCorruptionError("protection control hash does not match")
+        return (mode, definition_version, activation_id, version)
+
+    def reserve_protection_execution(
+        self,
+        *,
+        observation_id: str,
+        reservation_id: str,
+        operation_id: str,
+        reserved_at: ExternalTime,
+    ) -> bool:
+        self._ensure_open()
+        try:
+            self._connection.execute(
+                """
+                INSERT INTO protection_execution_reservations(
+                    observation_id, reservation_id, operation_id, reserved_at
+                ) VALUES (?, ?, ?, ?)
+                """,
+                (
+                    observation_id,
+                    reservation_id,
+                    operation_id,
+                    reserved_at.value.isoformat(),
+                ),
+            )
+        except sqlite3.IntegrityError:
+            return False
+        return True
+
+    def has_protection_reservation(
+        self,
+        *,
+        observation_id: str,
+        reservation_id: str,
+        operation_id: str,
+    ) -> bool:
+        self._ensure_open()
+        row = self._connection.execute(
+            """
+            SELECT 1 FROM protection_execution_reservations
+            WHERE observation_id = ? AND reservation_id = ? AND operation_id = ?
+            """,
+            (observation_id, reservation_id, operation_id),
+        ).fetchone()
+        return row is not None
+
+    def append_protection_audit(self, record: ProtectionAuditRecord) -> None:
+        self._ensure_open()
+        try:
+            self._connection.execute("BEGIN IMMEDIATE")
+            self._insert_protection_audit(record)
+            self._connection.commit()
+        except sqlite3.DatabaseError as error:
+            self._connection.rollback()
+            raise PersistenceCommitError("protection audit write failed") from error
+
+    def activate_protection_atomic(
+        self,
+        *,
+        observation_id: str,
+        reservation_id: str,
+        operation_id: str,
+        activation_id: str,
+        activated_at: ExternalTime,
+        audit: ProtectionAuditRecord,
+    ) -> None:
+        self._ensure_open()
+        try:
+            self._connection.execute("BEGIN IMMEDIATE")
+            reservation = self._connection.execute(
+                """
+                SELECT operation_id FROM protection_execution_reservations
+                WHERE observation_id = ? AND reservation_id = ?
+                """,
+                (observation_id, reservation_id),
+            ).fetchone()
+            if reservation is None or reservation["operation_id"] != operation_id:
+                raise PersistenceConsistencyError(
+                    "fixed protection execution has no matching reservation"
+                )
+            control = self._connection.execute(
+                """
+                SELECT definition_version, version FROM protection_control
+                WHERE singleton = 1 AND mode = 'normal'
+                """
+            ).fetchone()
+            if control is None:
+                raise PersistenceConsistencyError(
+                    "protection transition requires normal mode"
+                )
+            next_version = int(control["version"]) + 1
+            control_hash = self._protection_control_hash(
+                ProtectionMode.PROTECTED,
+                str(control["definition_version"]),
+                activation_id,
+                next_version,
+            )
+            cursor = self._connection.execute(
+                """
+                UPDATE protection_control
+                SET mode = 'protected', activation_id = ?, updated_at = ?,
+                    version = ?, control_hash = ?
+                WHERE singleton = 1 AND mode = 'normal' AND version = ?
+                """,
+                (
+                    activation_id,
+                    activated_at.value.isoformat(),
+                    next_version,
+                    control_hash,
+                    int(control["version"]),
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise PersistenceConsistencyError(
+                    "protection transition requires normal mode"
+                )
+            self._insert_protection_audit(audit)
+            self._connection.commit()
+        except PersistenceConsistencyError:
+            self._connection.rollback()
+            raise
+        except sqlite3.DatabaseError as error:
+            self._connection.rollback()
+            raise PersistenceCommitError("atomic protection transition failed") from error
+
+    def release_protection_atomic(
+        self,
+        *,
+        activation_id: str,
+        released_at: ExternalTime,
+        audit: ProtectionAuditRecord,
+    ) -> None:
+        self._ensure_open()
+        try:
+            self._connection.execute("BEGIN IMMEDIATE")
+            control = self._connection.execute(
+                """
+                SELECT definition_version, version FROM protection_control
+                WHERE singleton = 1 AND mode = 'protected' AND activation_id = ?
+                """,
+                (activation_id,),
+            ).fetchone()
+            if control is None:
+                raise PersistenceConsistencyError(
+                    "release does not match the active protection transition"
+                )
+            next_version = int(control["version"]) + 1
+            control_hash = self._protection_control_hash(
+                ProtectionMode.NORMAL,
+                str(control["definition_version"]),
+                None,
+                next_version,
+            )
+            cursor = self._connection.execute(
+                """
+                UPDATE protection_control
+                SET mode = 'normal', activation_id = NULL, updated_at = ?,
+                    version = ?, control_hash = ?
+                WHERE singleton = 1 AND mode = 'protected' AND activation_id = ?
+                    AND version = ?
+                """,
+                (
+                    released_at.value.isoformat(),
+                    next_version,
+                    control_hash,
+                    activation_id,
+                    int(control["version"]),
+                ),
+            )
+            if cursor.rowcount != 1:
+                raise PersistenceConsistencyError(
+                    "release does not match the active protection transition"
+                )
+            self._insert_protection_audit(audit)
+            self._connection.commit()
+        except PersistenceConsistencyError:
+            self._connection.rollback()
+            raise
+        except sqlite3.DatabaseError as error:
+            self._connection.rollback()
+            raise PersistenceCommitError("atomic protection release failed") from error
+
+    def protection_audit_records(self) -> tuple[ProtectionAuditRecord, ...]:
+        self._ensure_open()
+        rows = self._connection.execute(
+            "SELECT * FROM protection_audit ORDER BY sequence"
+        ).fetchall()
+        previous_hash = "genesis"
+        records: list[ProtectionAuditRecord] = []
+        for row in rows:
+            record = ProtectionAuditRecord(
+                record_id=str(row["record_id"]),
+                occurred_at=ExternalTime(datetime.fromisoformat(row["occurred_at"])),
+                kind=ProtectionAuditKind(row["kind"]),
+                actor=str(row["actor"]),
+                target=str(row["target"]),
+                decision=ProtectionDecision(row["decision"]),
+                reason=str(row["reason"]),
+                correlation_id=(
+                    None
+                    if row["correlation_id"] is None
+                    else str(row["correlation_id"])
+                ),
+            )
+            expected = self._audit_hash(record, previous_hash)
+            if row["previous_hash"] != previous_hash or row["record_hash"] != expected:
+                raise PersistenceCorruptionError("protection audit chain is broken")
+            records.append(record)
+            previous_hash = expected
+        return tuple(records)
+
     def close(self) -> None:
         if not self._closed:
             self._connection.close()
@@ -168,6 +481,7 @@ class SQLitePersistenceStore:
         subject_id_factory: Callable[[], str],
         session_id_factory: Callable[[], str],
         now_factory: Callable[[], ExternalTime],
+        upgrade_from_configuration_versions: tuple[str, ...],
     ) -> PersistenceOpenResult:
         if not configuration_version.strip():
             raise ValueError("configuration version must not be empty")
@@ -201,6 +515,9 @@ class SQLitePersistenceStore:
                 subject_id_factory,
                 now_factory,
                 allow_create=new_schema,
+                upgrade_from_configuration_versions=(
+                    upgrade_from_configuration_versions
+                ),
             )
             previous_exit = self._read_previous_exit()
             snapshot = self._read_latest_snapshot(identity)
@@ -275,6 +592,7 @@ class SQLitePersistenceStore:
         now_factory: Callable[[], ExternalTime],
         *,
         allow_create: bool,
+        upgrade_from_configuration_versions: tuple[str, ...],
     ) -> PersistenceIdentity:
         row = self._connection.execute(
             """
@@ -318,13 +636,69 @@ class SQLitePersistenceStore:
             schema_version=int(row["schema_version"]),
             created_at=ExternalTime(datetime.fromisoformat(row["created_at"])),
         )
-        if identity.configuration_version != configuration_version:
-            raise PersistenceConsistencyError(
-                "stored configuration version does not match this composition"
-            )
         if identity.schema_version != self.SCHEMA_VERSION:
             raise PersistenceConsistencyError("stored identity schema is unsupported")
+        if identity.configuration_version != configuration_version:
+            if identity.configuration_version not in upgrade_from_configuration_versions:
+                raise PersistenceConsistencyError(
+                    "stored configuration version does not match this composition"
+                )
+            identity = self._upgrade_configuration(
+                identity,
+                configuration_version,
+                now_factory(),
+            )
         return identity
+
+    def _upgrade_configuration(
+        self,
+        identity: PersistenceIdentity,
+        configuration_version: str,
+        upgraded_at: ExternalTime,
+    ) -> PersistenceIdentity:
+        snapshot = self._read_latest_snapshot(identity)
+        upgraded_identity = replace(
+            identity,
+            configuration_version=configuration_version,
+        )
+        try:
+            self._connection.execute("BEGIN IMMEDIATE")
+            self._connection.execute(
+                "UPDATE identity SET configuration_version = ? WHERE singleton = 1",
+                (configuration_version,),
+            )
+            if snapshot is not None:
+                upgraded = replace(
+                    snapshot,
+                    snapshot_id=f"configuration-upgrade-{uuid4()}",
+                    sequence=snapshot.sequence + 1,
+                    created_at=upgraded_at,
+                    configuration_version=configuration_version,
+                )
+                payload = encode_snapshot(upgraded)
+                checksum = hashlib.sha256(payload.encode("utf-8")).hexdigest()
+                self._connection.execute(
+                    """
+                    INSERT INTO checkpoints(
+                        sequence, snapshot_id, created_at, subject_id,
+                        configuration_version, payload, checksum
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        upgraded.sequence,
+                        upgraded.snapshot_id,
+                        upgraded.created_at.value.isoformat(),
+                        upgraded.subject_id,
+                        upgraded.configuration_version,
+                        payload,
+                        checksum,
+                    ),
+                )
+            self._connection.commit()
+        except sqlite3.DatabaseError as error:
+            self._connection.rollback()
+            raise PersistenceCommitError("configuration upgrade failed") from error
+        return upgraded_identity
 
     def _read_previous_exit(self) -> PreviousExit:
         row = self._connection.execute(
@@ -394,3 +768,69 @@ class SQLitePersistenceStore:
     def _ensure_open(self) -> None:
         if self._closed:
             raise PersistenceConsistencyError("persistence store is closed")
+
+    def _insert_protection_audit(self, record: ProtectionAuditRecord) -> None:
+        row = self._connection.execute(
+            "SELECT record_hash FROM protection_audit ORDER BY sequence DESC LIMIT 1"
+        ).fetchone()
+        previous_hash = "genesis" if row is None else str(row["record_hash"])
+        record_hash = self._audit_hash(record, previous_hash)
+        self._connection.execute(
+            """
+            INSERT INTO protection_audit(
+                record_id, occurred_at, kind, actor, target, decision, reason,
+                correlation_id, previous_hash, record_hash
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                record.record_id,
+                record.occurred_at.value.isoformat(),
+                record.kind.value,
+                record.actor,
+                record.target,
+                record.decision.value,
+                record.reason,
+                record.correlation_id,
+                previous_hash,
+                record_hash,
+            ),
+        )
+
+    @staticmethod
+    def _audit_hash(record: ProtectionAuditRecord, previous_hash: str) -> str:
+        payload = json.dumps(
+            {
+                "record_id": record.record_id,
+                "occurred_at": record.occurred_at.value.isoformat(),
+                "kind": record.kind.value,
+                "actor": record.actor,
+                "target": record.target,
+                "decision": record.decision.value,
+                "reason": record.reason,
+                "correlation_id": record.correlation_id,
+                "previous_hash": previous_hash,
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _protection_control_hash(
+        mode: ProtectionMode,
+        definition_version: str,
+        activation_id: str | None,
+        version: int,
+    ) -> str:
+        payload = json.dumps(
+            {
+                "mode": mode.value,
+                "definition_version": definition_version,
+                "activation_id": activation_id,
+                "version": version,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()

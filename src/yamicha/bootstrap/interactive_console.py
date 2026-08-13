@@ -10,10 +10,11 @@ from uuid import uuid4
 
 from yamicha.adapters.channels import ConsoleChannel
 from yamicha.body.runtime import RuntimeStatus
-from yamicha.contracts import ExternalTime, InputDisposition
+from yamicha.contracts import ExternalTime, InputDisposition, ProtectionMode
 
 from .stage6 import Stage6System
-from .stage7 import Stage7System, make_stage7_system
+from .stage7 import Stage7System
+from .stage8 import Stage8System, make_stage8_system
 
 
 class InteractiveConsole:
@@ -22,7 +23,7 @@ class InteractiveConsole:
         *,
         input_stream: TextIO,
         output_stream: TextIO,
-        system: Stage6System | Stage7System,
+        system: Stage6System | Stage7System | Stage8System,
         input_id_factory: Callable[[], str] | None = None,
         external_time_factory: Callable[[], ExternalTime] | None = None,
         source_id: str = "local-console",
@@ -42,6 +43,14 @@ class InteractiveConsole:
     def run(self) -> int:
         stage_label = getattr(self._system, "stage_label", 6)
         self._output.write(f"Yamicha 対話コンソール（段階{stage_label}）\n")
+        if isinstance(self._system, Stage8System):
+            protection_label = (
+                "保護中（通常の入力・出力・永続化を停止）"
+                if self._system.protection_boundary.mode
+                is ProtectionMode.PROTECTED
+                else "通常"
+            )
+            self._output.write(f"状態: {protection_label}\n")
         self._output.write("終了するには /quit を入力してください。\n")
         try:
             while True:
@@ -80,7 +89,7 @@ class InteractiveConsole:
         return input_id
 
     def _stop_started_system(self) -> None:
-        if isinstance(self._system, Stage7System):
+        if isinstance(self._system, (Stage7System, Stage8System)):
             self._system.shutdown()
             return
         if self._system.runtime.status not in {
@@ -97,7 +106,7 @@ def run_interactive_console(
     persistence_path: str | Path = Path(".yamicha/yamicha.sqlite3"),
 ) -> int:
     source_id = "local-console"
-    system = make_stage7_system(
+    system = make_stage8_system(
         persistence_path=persistence_path,
         known_counterpart_id=source_id,
     )

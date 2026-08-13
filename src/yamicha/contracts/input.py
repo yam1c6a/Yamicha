@@ -19,6 +19,8 @@ class InputDisposition(StrEnum):
     INVALID_FORMAT = "invalid_format"
     UNTRUSTED = "untrusted"
     UNSUPPORTED = "unsupported"
+    UNAUTHORIZED = "unauthorized"
+    BLOCKED = "blocked"
 
 
 class InputQuality(StrEnum):

@@ -8,6 +8,7 @@ from enum import StrEnum
 from .lifecycle import OperatingState
 from .retention import CandidateReview, LifecycleRecord, MemoryItem, RetentionCandidate
 from .time import ExternalTime, InternalTime
+from .protection import ProtectionMode
 
 
 class PreviousExit(StrEnum):
@@ -93,10 +94,17 @@ class RelationshipPersistenceSnapshot:
 class ProtectionPersistenceSnapshot:
     normal_dialogue_output_enabled: bool
     version: int = 1
+    mode: ProtectionMode = ProtectionMode.NORMAL
+    definition_version: str = "stage7-protection-v1"
+    activation_id: str | None = None
 
     def __post_init__(self) -> None:
-        if self.version < 1:
+        if self.version < 1 or not self.definition_version.strip():
             raise ValueError("persisted protection state version must be positive")
+        if (self.mode is ProtectionMode.PROTECTED) != (
+            self.activation_id is not None
+        ):
+            raise ValueError("protected persistence state requires an activation ID")
 
 
 @dataclass(frozen=True, slots=True)
