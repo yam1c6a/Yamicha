@@ -17,6 +17,10 @@ from yamicha.contracts import (
     CapabilityResultStatus,
     ExternalTime,
     InitializationKind,
+    IntelligenceAdoptionStatus,
+    IntelligencePurpose,
+    IntelligenceResultStatus,
+    IntelligenceTraceRecord,
     PersistenceIdentity,
     PersistenceOpenResult,
     PersistenceSnapshot,
@@ -613,6 +617,105 @@ class SQLitePersistenceStore:
             records.append(record)
         return tuple(records)
 
+    def initialize_intelligence_storage(self) -> None:
+        self._ensure_open()
+        self._connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS intelligence_trace(
+                sequence INTEGER PRIMARY KEY AUTOINCREMENT,
+                trace_id TEXT NOT NULL UNIQUE,
+                request_id TEXT NOT NULL UNIQUE,
+                lifecycle_id TEXT NOT NULL,
+                purpose TEXT NOT NULL,
+                model TEXT NOT NULL,
+                input_scope TEXT NOT NULL,
+                input_digest TEXT NOT NULL,
+                constraints_digest TEXT NOT NULL,
+                result_status TEXT NOT NULL,
+                output_digest TEXT,
+                adoption_status TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                record_hash TEXT NOT NULL
+            )
+            """
+        )
+
+    def append_intelligence_trace(self, record: IntelligenceTraceRecord) -> None:
+        self._ensure_open()
+        try:
+            self._connection.execute(
+                """
+                INSERT INTO intelligence_trace(
+                    trace_id, request_id, lifecycle_id, purpose, model,
+                    input_scope, input_digest, constraints_digest,
+                    result_status, output_digest, adoption_status, reason,
+                    occurred_at, record_hash
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    record.trace_id,
+                    record.request_id,
+                    record.lifecycle_id,
+                    record.purpose.value,
+                    record.model,
+                    json.dumps(record.input_scope, ensure_ascii=False),
+                    record.input_digest,
+                    record.constraints_digest,
+                    record.result_status.value,
+                    record.output_digest,
+                    record.adoption_status.value,
+                    record.reason,
+                    record.occurred_at.value.isoformat(),
+                    self._intelligence_trace_hash(record),
+                ),
+            )
+        except sqlite3.DatabaseError as error:
+            raise PersistenceCommitError("intelligence trace write failed") from error
+
+    def intelligence_trace_records(self) -> tuple[IntelligenceTraceRecord, ...]:
+        self._ensure_open()
+        rows = self._connection.execute(
+            "SELECT * FROM intelligence_trace ORDER BY sequence"
+        ).fetchall()
+        records: list[IntelligenceTraceRecord] = []
+        for row in rows:
+            try:
+                input_scope = tuple(json.loads(row["input_scope"]))
+                record = IntelligenceTraceRecord(
+                    trace_id=str(row["trace_id"]),
+                    request_id=str(row["request_id"]),
+                    lifecycle_id=str(row["lifecycle_id"]),
+                    purpose=IntelligencePurpose(row["purpose"]),
+                    model=str(row["model"]),
+                    input_scope=input_scope,
+                    input_digest=str(row["input_digest"]),
+                    constraints_digest=str(row["constraints_digest"]),
+                    result_status=IntelligenceResultStatus(row["result_status"]),
+                    output_digest=(
+                        None
+                        if row["output_digest"] is None
+                        else str(row["output_digest"])
+                    ),
+                    adoption_status=IntelligenceAdoptionStatus(
+                        row["adoption_status"]
+                    ),
+                    reason=str(row["reason"]),
+                    occurred_at=ExternalTime(
+                        datetime.fromisoformat(row["occurred_at"])
+                    ),
+                )
+            except (ValueError, TypeError, json.JSONDecodeError) as error:
+                raise PersistenceCorruptionError(
+                    "intelligence trace record is invalid"
+                ) from error
+            if row["record_hash"] != self._intelligence_trace_hash(record):
+                raise PersistenceCorruptionError(
+                    "intelligence trace record hash does not match"
+                )
+            records.append(record)
+        return tuple(records)
+
     def close(self) -> None:
         if not self._closed:
             self._connection.close()
@@ -998,6 +1101,30 @@ class SQLitePersistenceStore:
                     if record.completed_at is None
                     else record.completed_at.value.isoformat()
                 ),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+        return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _intelligence_trace_hash(record: IntelligenceTraceRecord) -> str:
+        payload = json.dumps(
+            {
+                "trace_id": record.trace_id,
+                "request_id": record.request_id,
+                "lifecycle_id": record.lifecycle_id,
+                "purpose": record.purpose.value,
+                "model": record.model,
+                "input_scope": record.input_scope,
+                "input_digest": record.input_digest,
+                "constraints_digest": record.constraints_digest,
+                "result_status": record.result_status.value,
+                "output_digest": record.output_digest,
+                "adoption_status": record.adoption_status.value,
+                "reason": record.reason,
+                "occurred_at": record.occurred_at.value.isoformat(),
             },
             ensure_ascii=False,
             sort_keys=True,

@@ -218,9 +218,11 @@ def make_stage8_system(
     _sensation_factory: Callable[..., Stage3Sensation] = Stage3Sensation,
     _core_factory: Callable[..., Stage8Core] = Stage8Core,
     _judgment_factory: Callable[..., Stage8Judgment] = Stage8Judgment,
+    _language_factory: Callable[..., Stage5Language] = Stage5Language,
     _sensation_options: dict[str, object] | None = None,
     _core_options: dict[str, object] | None = None,
     _judgment_options: dict[str, object] | None = None,
+    _language_options: dict[str, object] | None = None,
 ) -> Stage8System:
     now_factory = persistence_time_factory or (
         lambda: ExternalTime(datetime.now(UTC))
@@ -255,7 +257,10 @@ def make_stage8_system(
         release_evaluation_id_factory=release_evaluation_id_factory,
         **(_judgment_options or {}),
     )
-    language = Stage5Language(artifact_id_factory=expression_artifact_id_factory)
+    language = _language_factory(
+        artifact_id_factory=expression_artifact_id_factory,
+        **(_language_options or {}),
+    )
     store, recovery = SQLitePersistenceStore.open(
         persistence_path,
         configuration_version=_configuration_version,

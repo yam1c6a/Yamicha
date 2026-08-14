@@ -10,7 +10,7 @@ from yamicha.bootstrap import run_interactive_console
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Yamicha 対話コンソール（段階9）")
+    parser = argparse.ArgumentParser(description="Yamicha 対話コンソール（段階10）")
     parser.add_argument(
         "--db",
         type=Path,

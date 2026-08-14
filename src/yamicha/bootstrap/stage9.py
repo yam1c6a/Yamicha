@@ -27,6 +27,7 @@ from yamicha.life.stage9 import (
     Stage9Sensation,
 )
 from yamicha.life.stage9.capability import ReadOnlyResourceReader
+from yamicha.life.stage5 import Stage5Language
 from yamicha.life.stubs import AuxiliaryIntelligenceStub
 
 from .composition import YamichaComposition
@@ -115,8 +116,25 @@ def make_stage9_system(
     capability_proposal_id_factory: Callable[[], str] | None = None,
     capability_request_id_factory: Callable[[], str] | None = None,
     capability_finalization_id_factory: Callable[[], str] | None = None,
+    _configuration_version: str = CONFIGURATION_VERSION,
+    _upgrade_from_configuration_versions: tuple[str, ...] = ("stage8-v1",),
+    _core_factory: Callable[..., Stage9Core] = Stage9Core,
+    _judgment_factory: Callable[..., Stage9Judgment] = Stage9Judgment,
+    _language_factory: Callable[..., Stage5Language] = Stage5Language,
+    _core_options: dict[str, object] | None = None,
+    _judgment_options: dict[str, object] | None = None,
+    _language_options: dict[str, object] | None = None,
     **stage8_options: object,
 ) -> Stage9System:
+    core_options = {
+        "capability_request_id_factory": capability_request_id_factory,
+        "capability_finalization_id_factory": capability_finalization_id_factory,
+    }
+    core_options.update(_core_options or {})
+    judgment_options = {
+        "capability_proposal_id_factory": capability_proposal_id_factory,
+    }
+    judgment_options.update(_judgment_options or {})
     base = make_stage8_system(
         persistence_path=persistence_path,
         require_existing_persistence=require_existing_persistence,
@@ -124,23 +142,20 @@ def make_stage9_system(
         persistence_time_factory=persistence_time_factory,
         subject_id_factory=subject_id_factory,
         session_id_factory=session_id_factory,
-        _configuration_version=CONFIGURATION_VERSION,
-        _upgrade_from_configuration_versions=("stage8-v1",),
+        _configuration_version=_configuration_version,
+        _upgrade_from_configuration_versions=(
+            _upgrade_from_configuration_versions
+        ),
         _sensation_factory=Stage9Sensation,
-        _core_factory=Stage9Core,
-        _judgment_factory=Stage9Judgment,
+        _core_factory=_core_factory,
+        _judgment_factory=_judgment_factory,
+        _language_factory=_language_factory,
         _sensation_options={
             "capability_event_id_factory": capability_event_id_factory,
         },
-        _core_options={
-            "capability_request_id_factory": capability_request_id_factory,
-            "capability_finalization_id_factory": (
-                capability_finalization_id_factory
-            ),
-        },
-        _judgment_options={
-            "capability_proposal_id_factory": capability_proposal_id_factory,
-        },
+        _core_options=core_options,
+        _judgment_options=judgment_options,
+        _language_options=_language_options,
         **stage8_options,
     )
     try:

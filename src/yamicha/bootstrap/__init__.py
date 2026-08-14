@@ -9,6 +9,7 @@ from .stage6 import Stage6System, make_stage6_system
 from .stage7 import Stage7System, make_stage7_system
 from .stage8 import Stage8System, make_stage8_system
 from .stage9 import Stage9System, make_stage9_system
+from .stage10 import Stage10System, make_stage10_system
 from .interactive_console import InteractiveConsole, run_interactive_console
 
 __all__ = [
@@ -20,6 +21,7 @@ __all__ = [
     "Stage7System",
     "Stage8System",
     "Stage9System",
+    "Stage10System",
     "InteractiveConsole",
     "YamichaComposition",
     "make_stage1_composition",
@@ -31,5 +33,6 @@ __all__ = [
     "make_stage7_system",
     "make_stage8_system",
     "make_stage9_system",
+    "make_stage10_system",
     "run_interactive_console",
 ]
