@@ -95,7 +95,12 @@ class Stage6Judgment(Stage4Judgment):
             ),
             created_at=evidence.occurred_at,
             certainty=InformationCertainty.CONFIRMED,
-            reevaluation_condition=None,
+            reevaluation_condition=(
+                "observe later evidence that contradicts or qualifies the "
+                "confirmed meaning"
+            ),
+            change_target="future judgment material",
+            previous_meaning=candidate.meaning,
         )
 
     def _next_candidate_id(self) -> str:

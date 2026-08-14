@@ -85,6 +85,8 @@ class RetentionCandidate:
     created_at: ExternalTime
     certainty: InformationCertainty
     reevaluation_condition: str | None
+    change_target: str | None = None
+    previous_meaning: str | None = None
 
     def __post_init__(self) -> None:
         required = (
@@ -102,6 +104,16 @@ class RetentionCandidate:
             and not self.reevaluation_condition.strip()
         ):
             raise ValueError("reevaluation condition must not be blank")
+        if (self.change_target is None) != (self.previous_meaning is None):
+            raise ValueError(
+                "experience change target and previous meaning must appear together"
+            )
+        if self.change_target is not None and (
+            not self.change_target.strip() or not self.previous_meaning.strip()
+        ):
+            raise ValueError("experience change metadata must not be blank")
+        if self.change_target is not None and self.kind is not RetentionCandidateKind.EXPERIENCE:
+            raise ValueError("only an experience candidate can describe a change")
 
 
 class CandidateDisposition(StrEnum):

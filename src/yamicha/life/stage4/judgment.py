@@ -102,6 +102,19 @@ class Stage4Judgment(Stage2Judgment):
                 ("target, authority, and effect are not yet confirmed",),
                 ("confirm target, authority, and intended external effect",),
             )
+        if context.memory.confirmed_experience_references:
+            references = ", ".join(
+                context.memory.confirmed_experience_references
+            )
+            return (
+                DecisionDirection.RESPOND,
+                (
+                    "confirmed experience material was considered before "
+                    f"responding: {references}"
+                ),
+                (),
+                (),
+            )
         return (
             DecisionDirection.RESPOND,
             "materials permit an internal decision to respond",

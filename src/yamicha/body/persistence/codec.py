@@ -117,6 +117,8 @@ def _candidate_to_data(candidate: RetentionCandidate) -> dict[str, Any]:
         "created_at": _external(candidate.created_at),
         "certainty": candidate.certainty.value,
         "reevaluation_condition": candidate.reevaluation_condition,
+        "change_target": candidate.change_target,
+        "previous_meaning": candidate.previous_meaning,
     }
 
 
@@ -136,6 +138,16 @@ def _read_candidate(data: dict[str, Any]) -> RetentionCandidate:
             None
             if data["reevaluation_condition"] is None
             else str(data["reevaluation_condition"])
+        ),
+        change_target=(
+            None
+            if data.get("change_target") is None
+            else str(data["change_target"])
+        ),
+        previous_meaning=(
+            None
+            if data.get("previous_meaning") is None
+            else str(data["previous_meaning"])
         ),
     )
 

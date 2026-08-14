@@ -25,6 +25,7 @@ class MemoryDecisionMaterial:
     version: str
     available: bool
     related_references: tuple[str, ...] = ()
+    confirmed_experience_references: tuple[str, ...] = ()
     uncertainties: tuple[str, ...] = ()
 
 

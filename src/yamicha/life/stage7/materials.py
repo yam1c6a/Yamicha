@@ -2,12 +2,18 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from yamicha.contracts import (
     CandidateDisposition,
+    ElapsedTime,
+    ExecutionOpportunityKind,
+    InternalEvent,
     MemoryPersistenceSnapshot,
     ProtectionPersistenceSnapshot,
     RelationshipPersistenceSnapshot,
     ResponsibilityId,
+    StateSnapshot,
     StatePersistenceSnapshot,
 )
 from yamicha.life.stage4 import Stage4Relationship, Stage4State
@@ -15,6 +21,39 @@ from yamicha.life.stage6 import Stage6Memory
 
 
 class Stage7State(Stage4State):
+    def __init__(self) -> None:
+        super().__init__()
+        self._restored_for_restart = False
+
+    def observe_internal_event(self, event: InternalEvent) -> StateSnapshot:
+        if not self._restored_for_restart:
+            return super().observe_internal_event(event)
+        opportunity = event.opportunity
+        if (
+            opportunity.kind is not ExecutionOpportunityKind.STARTUP
+            or opportunity.sequence != 1
+        ):
+            raise ValueError(
+                "restored state requires the first startup execution opportunity"
+            )
+        if self._internal_time is None:
+            raise RuntimeError("restored state has no internal time")
+        stopped_elapsed = (
+            opportunity.external_time.value - self._internal_time.updated_at.value
+        )
+        if stopped_elapsed.total_seconds() < 0:
+            raise ValueError("restart time precedes the last persisted state time")
+        resumed_event = replace(
+            event,
+            opportunity=replace(
+                opportunity,
+                elapsed_since_previous=ElapsedTime(stopped_elapsed),
+            ),
+        )
+        snapshot = super().observe_internal_event(resumed_event)
+        self._restored_for_restart = False
+        return snapshot
+
     def persistence_snapshot(self) -> StatePersistenceSnapshot:
         if self._internal_time is None or self._last_correlation_id is None:
             raise RuntimeError("State has no completed cycle to persist")
@@ -36,6 +75,7 @@ class Stage7State(Stage4State):
         self._internal_time = snapshot.internal_time
         self._last_correlation_id = snapshot.last_correlation_id
         self._material_version = snapshot.material_version
+        self._restored_for_restart = True
 
 
 class Stage7Memory(Stage6Memory):

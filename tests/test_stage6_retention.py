@@ -227,6 +227,9 @@ class Stage6RetentionTest(unittest.TestCase):
         self.assertEqual(reevaluated.version, 2)
         self.assertEqual(reevaluated.certainty, InformationCertainty.CONFIRMED)
         self.assertIn(later.entry_id, reevaluated.provenance_entry_ids)
+        self.assertEqual(reevaluated.change_target, "future judgment material")
+        self.assertEqual(reevaluated.previous_meaning, experience_candidate.meaning)
+        self.assertIsNotNone(reevaluated.reevaluation_condition)
         self.assertEqual(review.kind, CandidateReviewKind.REEVALUATION)
         self.assertEqual(review.disposition, CandidateDisposition.ADOPTED)
         self.assertEqual(len(system.memory.memory_items), 2)
@@ -235,6 +238,47 @@ class Stage6RetentionTest(unittest.TestCase):
             experience_evidence.source_kind,
             RetentionCandidateKind.EXPERIENCE,
         )
+
+    def test_confirmed_experience_is_reflected_in_the_next_judgment(self) -> None:
+        system = make_system()
+        first = system.receive_text(verified_text("input-001", "こんにちは"))
+        experience_candidate = first.retention_candidates[1]
+        later = RecordEntry(
+            entry_id="later-result-001",
+            lifecycle_id="later-cycle-001",
+            kind=RecordKind.RESULT,
+            source_owner=ResponsibilityId.SENSATION,
+            source_reference="later-event-001",
+            summary="human acknowledged the response",
+            occurred_at=ExternalTime(
+                datetime(2026, 8, 12, 16, 1, tzinfo=UTC)
+            ),
+            certainty=InformationCertainty.CONFIRMED,
+        )
+        reevaluated = system.judgment.reevaluate_experience(
+            experience_candidate,
+            later,
+            confirmed_meaning="the short acknowledgement was sufficient",
+        )
+        review = system.core.route_retention_candidates((reevaluated,))[0]
+        assert review.memory_item_id is not None
+
+        next_outcome = system.receive_text(
+            verified_text("input-002", "次の応答をお願いします")
+        )
+
+        assert next_outcome.context is not None
+        assert next_outcome.judgment is not None
+        self.assertEqual(
+            next_outcome.context.memory.confirmed_experience_references,
+            (review.memory_item_id,),
+        )
+        selected = next(
+            candidate
+            for candidate in next_outcome.judgment.candidates
+            if candidate.selected
+        )
+        self.assertIn(review.memory_item_id, selected.acceptance_reasons[0])
 
     def test_stale_or_wrong_owner_candidate_is_rejected(self) -> None:
         system = make_system()

@@ -62,6 +62,13 @@ class Stage6Memory(Stage4Memory):
             related_references=tuple(
                 item.memory_item_id for item in self._items.values() if item.active
             ),
+            confirmed_experience_references=tuple(
+                item.memory_item_id
+                for item in self._items.values()
+                if item.active
+                and item.source_kind is RetentionCandidateKind.EXPERIENCE
+                and item.certainty is InformationCertainty.CONFIRMED
+            ),
             uncertainties=base.uncertainties,
         )
 
