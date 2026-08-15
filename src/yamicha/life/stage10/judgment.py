@@ -8,6 +8,7 @@ from uuid import uuid4
 from yamicha.contracts import (
     AuxiliaryIntelligenceProposal,
     AuxiliaryIntelligenceResult,
+    ConversationMemoryWindow,
     DialogueContextWindow,
     ExternalTime,
     IntelligenceCandidateReview,
@@ -46,6 +47,7 @@ class Stage10Judgment(Stage9Judgment):
         constraints: IntelligenceConstraints,
         proposed_at: ExternalTime,
         dialogue_context: DialogueContextWindow | None = None,
+        conversation_memory: ConversationMemoryWindow | None = None,
     ) -> AuxiliaryIntelligenceProposal:
         proposal = AuxiliaryIntelligenceProposal(
             proposal_id=self._required_id(
@@ -60,6 +62,7 @@ class Stage10Judgment(Stage9Judgment):
             constraints=constraints,
             proposed_at=proposed_at,
             dialogue_context=dialogue_context,
+            conversation_memory=conversation_memory,
         )
         self._intelligence_proposals[proposal.proposal_id] = proposal
         return proposal

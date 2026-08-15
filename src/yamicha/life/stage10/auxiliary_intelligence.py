@@ -13,6 +13,7 @@ from yamicha.contracts import (
     ExternalTime,
     IntegratedIntelligenceRequest,
     IntelligenceCandidate,
+    IntelligencePurpose,
     IntelligenceResultStatus,
 )
 from yamicha.life.ports import AUXILIARY_INTELLIGENCE_DEFINITION
@@ -115,18 +116,27 @@ class Stage10AuxiliaryIntelligence:
                 None,
                 "external intelligence content is not valid JSON",
             )
-        if (
-            not isinstance(decoded, dict)
-            or set(decoded) != {"reply"}
-            or not isinstance(decoded["reply"], str)
-            or not decoded["reply"].strip()
+        if request.proposal.purpose is IntelligencePurpose.MEMORY_INTERPRETATION_CANDIDATE:
+            text = self._memory_interpretation_text(decoded)
+        elif (
+            isinstance(decoded, dict)
+            and set(decoded) == {"reply"}
+            and isinstance(decoded["reply"], str)
+            and decoded["reply"].strip()
         ):
+            text = decoded["reply"].strip()
+        else:
             return (
                 IntelligenceResultStatus.INVALID_OUTPUT,
                 None,
                 "external intelligence content does not match the reply schema",
             )
-        text = decoded["reply"].strip()
+        if text is None:
+            return (
+                IntelligenceResultStatus.INVALID_OUTPUT,
+                None,
+                "external intelligence content does not match the memory interpretation schema",
+            )
         constraints = request.proposal.constraints
         if len(text) > constraints.max_output_characters or any(
             ord(character) < 32 and character not in {"\n", "\t"}
@@ -158,6 +168,71 @@ class Stage10AuxiliaryIntelligence:
             IntelligenceResultStatus.SUCCESS,
             candidate,
             "bounded external intelligence candidate was received",
+        )
+
+    @staticmethod
+    def _memory_interpretation_text(decoded: object) -> str | None:
+        required = {
+            "action",
+            "subject",
+            "meaning",
+            "target_text",
+            "certainty",
+            "needs_confirmation",
+            "evidence_quote",
+        }
+        if not isinstance(decoded, dict) or set(decoded) != required:
+            return None
+        if (
+            not isinstance(decoded["action"], str)
+            or decoded["action"] not in {"remember", "forget", "none"}
+            or not isinstance(decoded["subject"], str)
+            or decoded["subject"] not in {"self", "third_party", "unknown"}
+            or not isinstance(decoded["certainty"], str)
+            or decoded["certainty"] not in {"confirmed", "inferred", "unknown"}
+            or not isinstance(decoded["needs_confirmation"], bool)
+            or not all(
+                value is None or isinstance(value, str)
+                for value in (
+                    decoded["meaning"],
+                    decoded["target_text"],
+                    decoded["evidence_quote"],
+                )
+            )
+        ):
+            return None
+        action = decoded["action"]
+        meaning = decoded["meaning"]
+        target = decoded["target_text"]
+        evidence = decoded["evidence_quote"]
+        if any(
+            isinstance(value, str) and not value.strip()
+            for value in (meaning, target, evidence)
+        ):
+            return None
+        if action == "remember" and (
+            not isinstance(meaning, str)
+            or not meaning.strip()
+            or target is not None
+            or not isinstance(evidence, str)
+            or not evidence.strip()
+        ):
+            return None
+        if action == "forget" and (
+            not isinstance(target, str)
+            or not target.strip()
+            or meaning is not None
+            or not isinstance(evidence, str)
+            or not evidence.strip()
+        ):
+            return None
+        if action == "none" and (meaning is not None or target is not None):
+            return None
+        return json.dumps(
+            decoded,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
         )
 
     @staticmethod

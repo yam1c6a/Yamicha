@@ -10,6 +10,12 @@ from .retention import CandidateReview, LifecycleRecord, MemoryItem, RetentionCa
 from .time import ExternalTime, InternalTime
 from .protection import ProtectionMode
 from .dialogue import DialogueContext, DialogueContextStatus
+from .conversation_memory import (
+    ConversationMemoryCandidate,
+    ConversationMemoryForgetRecord,
+    ConversationMemoryItem,
+    ConversationMemoryReview,
+)
 
 
 class PreviousExit(StrEnum):
@@ -61,6 +67,10 @@ class MemoryPersistenceSnapshot:
     candidate_versions: tuple[tuple[str, int], ...]
     reviews: tuple[CandidateReview, ...]
     items: tuple[MemoryItem, ...]
+    conversation_candidates: tuple[ConversationMemoryCandidate, ...] = ()
+    conversation_reviews: tuple[ConversationMemoryReview, ...] = ()
+    conversation_items: tuple[ConversationMemoryItem, ...] = ()
+    conversation_forget_records: tuple[ConversationMemoryForgetRecord, ...] = ()
 
     def __post_init__(self) -> None:
         if self.material_version < 1:
@@ -79,6 +89,57 @@ class MemoryPersistenceSnapshot:
             raise ValueError("candidate versions must cover all persisted candidates")
         if any(versions[candidate.candidate_id] != candidate.version for candidate in self.candidates):
             raise ValueError("persisted candidate versions are inconsistent")
+        conversation_candidate_ids = tuple(
+            candidate.candidate_id for candidate in self.conversation_candidates
+        )
+        conversation_review_ids = tuple(
+            review.review_id for review in self.conversation_reviews
+        )
+        conversation_item_ids = tuple(
+            item.memory_item_id for item in self.conversation_items
+        )
+        conversation_forget_record_ids = tuple(
+            record.record_id for record in self.conversation_forget_records
+        )
+        conversation_versions = {
+            candidate.candidate_id: candidate.version
+            for candidate in self.conversation_candidates
+        }
+        if (
+            len(set(conversation_candidate_ids)) != len(conversation_candidate_ids)
+            or len(set(conversation_review_ids)) != len(conversation_review_ids)
+            or len(set(conversation_item_ids)) != len(conversation_item_ids)
+            or len(set(conversation_forget_record_ids))
+            != len(conversation_forget_record_ids)
+        ):
+            raise ValueError("persisted conversation-memory IDs must be unique")
+        if any(
+            review.candidate_id not in set(conversation_candidate_ids)
+            for review in self.conversation_reviews
+        ):
+            raise ValueError("conversation-memory review references an unknown candidate")
+        if any(
+            conversation_versions.get(review.candidate_id)
+            != review.candidate_version
+            for review in self.conversation_reviews
+        ):
+            raise ValueError("conversation-memory review version is inconsistent")
+        if any(
+            review.memory_item_id is not None
+            and review.memory_item_id not in set(conversation_item_ids)
+            for review in self.conversation_reviews
+        ):
+            raise ValueError("conversation-memory review references an unknown item")
+        if any(
+            not set(item.source_candidate_ids).issubset(conversation_candidate_ids)
+            for item in self.conversation_items
+        ):
+            raise ValueError("conversation-memory item has unknown candidate provenance")
+        if any(
+            any(item_id not in set(conversation_item_ids) for item_id, _, _ in record.deactivated_items)
+            for record in self.conversation_forget_records
+        ):
+            raise ValueError("conversation-memory forget record references an unknown item")
 
 
 @dataclass(frozen=True, slots=True)

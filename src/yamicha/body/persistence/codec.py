@@ -11,6 +11,10 @@ from yamicha.contracts import (
     CandidateReview,
     CandidateReviewKind,
     ContentTrust,
+    ConversationMemoryCandidate,
+    ConversationMemoryForgetRecord,
+    ConversationMemoryItem,
+    ConversationMemoryReview,
     DialogueContext,
     DialogueContextStatus,
     DialogueSpeaker,
@@ -219,6 +223,163 @@ def _read_item(data: dict[str, Any]) -> MemoryItem:
     )
 
 
+def _conversation_candidate_to_data(
+    candidate: ConversationMemoryCandidate,
+) -> dict[str, Any]:
+    return {
+        "candidate_id": candidate.candidate_id,
+        "lifecycle_id": candidate.lifecycle_id,
+        "counterpart_id": candidate.counterpart_id,
+        "version": candidate.version,
+        "meaning": candidate.meaning,
+        "retention_reason": candidate.retention_reason,
+        "source_turn_ids": list(candidate.source_turn_ids),
+        "source_references": list(candidate.source_references),
+        "created_at": _external(candidate.created_at),
+        "certainty": candidate.certainty.value,
+        "content_trust": candidate.content_trust.value,
+        "reevaluation_condition": candidate.reevaluation_condition,
+    }
+
+
+def _read_conversation_candidate(
+    data: dict[str, Any],
+) -> ConversationMemoryCandidate:
+    return ConversationMemoryCandidate(
+        candidate_id=str(data["candidate_id"]),
+        lifecycle_id=str(data["lifecycle_id"]),
+        counterpart_id=str(data["counterpart_id"]),
+        version=int(data["version"]),
+        meaning=str(data["meaning"]),
+        retention_reason=str(data["retention_reason"]),
+        source_turn_ids=tuple(str(value) for value in data["source_turn_ids"]),
+        source_references=tuple(str(value) for value in data["source_references"]),
+        created_at=_read_external(data["created_at"]),
+        certainty=InformationCertainty(data["certainty"]),
+        content_trust=ContentTrust(data["content_trust"]),
+        reevaluation_condition=str(data["reevaluation_condition"]),
+    )
+
+
+def _conversation_review_to_data(
+    review: ConversationMemoryReview,
+) -> dict[str, Any]:
+    return {
+        "review_id": review.review_id,
+        "candidate_id": review.candidate_id,
+        "candidate_version": review.candidate_version,
+        "disposition": review.disposition.value,
+        "reason": review.reason,
+        "reviewed_at": _external(review.reviewed_at),
+        "memory_item_id": review.memory_item_id,
+    }
+
+
+def _read_conversation_review(data: dict[str, Any]) -> ConversationMemoryReview:
+    return ConversationMemoryReview(
+        review_id=str(data["review_id"]),
+        candidate_id=str(data["candidate_id"]),
+        candidate_version=int(data["candidate_version"]),
+        disposition=CandidateDisposition(data["disposition"]),
+        reason=str(data["reason"]),
+        reviewed_at=_read_external(data["reviewed_at"]),
+        memory_item_id=(
+            None
+            if data.get("memory_item_id") is None
+            else str(data["memory_item_id"])
+        ),
+    )
+
+
+def _conversation_item_to_data(item: ConversationMemoryItem) -> dict[str, Any]:
+    return {
+        "memory_item_id": item.memory_item_id,
+        "counterpart_id": item.counterpart_id,
+        "version": item.version,
+        "meaning": item.meaning,
+        "source_candidate_ids": list(item.source_candidate_ids),
+        "source_turn_ids": list(item.source_turn_ids),
+        "source_references": list(item.source_references),
+        "certainty": item.certainty.value,
+        "content_trust": item.content_trust.value,
+        "created_at": _external(item.created_at),
+        "updated_at": _external(item.updated_at),
+        "retention_reason": item.retention_reason,
+        "active": item.active,
+        "deactivated_at": (
+            None if item.deactivated_at is None else _external(item.deactivated_at)
+        ),
+        "deactivation_reason": item.deactivation_reason,
+    }
+
+
+def _read_conversation_item(data: dict[str, Any]) -> ConversationMemoryItem:
+    return ConversationMemoryItem(
+        memory_item_id=str(data["memory_item_id"]),
+        counterpart_id=str(data["counterpart_id"]),
+        version=int(data["version"]),
+        meaning=str(data["meaning"]),
+        source_candidate_ids=tuple(
+            str(value) for value in data["source_candidate_ids"]
+        ),
+        source_turn_ids=tuple(str(value) for value in data["source_turn_ids"]),
+        source_references=tuple(
+            str(value) for value in data["source_references"]
+        ),
+        certainty=InformationCertainty(data["certainty"]),
+        content_trust=ContentTrust(data["content_trust"]),
+        created_at=_read_external(data["created_at"]),
+        updated_at=_read_external(data["updated_at"]),
+        retention_reason=str(data["retention_reason"]),
+        active=bool(data["active"]),
+        deactivated_at=(
+            None
+            if data.get("deactivated_at") is None
+            else _read_external(data["deactivated_at"])
+        ),
+        deactivation_reason=(
+            None
+            if data.get("deactivation_reason") is None
+            else str(data["deactivation_reason"])
+        ),
+    )
+
+
+def _conversation_forget_record_to_data(
+    record: ConversationMemoryForgetRecord,
+) -> dict[str, Any]:
+    return {
+        "record_id": record.record_id,
+        "request_id": record.request_id,
+        "lifecycle_id": record.lifecycle_id,
+        "counterpart_id": record.counterpart_id,
+        "deactivated_items": [list(value) for value in record.deactivated_items],
+        "source_reference": record.source_reference,
+        "reason": record.reason,
+        "occurred_at": _external(record.occurred_at),
+        "physical_deletion": record.physical_deletion,
+    }
+
+
+def _read_conversation_forget_record(
+    data: dict[str, Any],
+) -> ConversationMemoryForgetRecord:
+    return ConversationMemoryForgetRecord(
+        record_id=str(data["record_id"]),
+        request_id=str(data["request_id"]),
+        lifecycle_id=str(data["lifecycle_id"]),
+        counterpart_id=str(data["counterpart_id"]),
+        deactivated_items=tuple(
+            (str(value[0]), int(value[1]), int(value[2]))
+            for value in data["deactivated_items"]
+        ),
+        source_reference=str(data["source_reference"]),
+        reason=str(data["reason"]),
+        occurred_at=_read_external(data["occurred_at"]),
+        physical_deletion=bool(data.get("physical_deletion", False)),
+    )
+
+
 def _dialogue_turn_to_data(turn: DialogueTurn) -> dict[str, Any]:
     return {
         "turn_id": turn.turn_id,
@@ -315,6 +476,22 @@ def _snapshot_to_data(snapshot: PersistenceSnapshot) -> dict[str, Any]:
             "candidate_versions": [list(value) for value in memory.candidate_versions],
             "reviews": [_review_to_data(review) for review in memory.reviews],
             "items": [_item_to_data(item) for item in memory.items],
+            "conversation_candidates": [
+                _conversation_candidate_to_data(candidate)
+                for candidate in memory.conversation_candidates
+            ],
+            "conversation_reviews": [
+                _conversation_review_to_data(review)
+                for review in memory.conversation_reviews
+            ],
+            "conversation_items": [
+                _conversation_item_to_data(item)
+                for item in memory.conversation_items
+            ],
+            "conversation_forget_records": [
+                _conversation_forget_record_to_data(record)
+                for record in memory.conversation_forget_records
+            ],
         },
         "relationship": {
             "known_counterpart_id": snapshot.relationship.known_counterpart_id,
@@ -380,6 +557,22 @@ def _snapshot_from_data(data: dict[str, Any]) -> PersistenceSnapshot:
             ),
             reviews=tuple(_read_review(review) for review in memory["reviews"]),
             items=tuple(_read_item(item) for item in memory["items"]),
+            conversation_candidates=tuple(
+                _read_conversation_candidate(candidate)
+                for candidate in memory.get("conversation_candidates", ())
+            ),
+            conversation_reviews=tuple(
+                _read_conversation_review(review)
+                for review in memory.get("conversation_reviews", ())
+            ),
+            conversation_items=tuple(
+                _read_conversation_item(item)
+                for item in memory.get("conversation_items", ())
+            ),
+            conversation_forget_records=tuple(
+                _read_conversation_forget_record(record)
+                for record in memory.get("conversation_forget_records", ())
+            ),
         ),
         relationship=RelationshipPersistenceSnapshot(
             known_counterpart_id=str(relationship["known_counterpart_id"]),

@@ -219,11 +219,13 @@ def make_stage8_system(
     _core_factory: Callable[..., Stage8Core] = Stage8Core,
     _judgment_factory: Callable[..., Stage8Judgment] = Stage8Judgment,
     _language_factory: Callable[..., Stage5Language] = Stage5Language,
+    _memory_factory: Callable[..., Stage7Memory] = Stage7Memory,
     _relationship_factory: Callable[..., Stage7Relationship] = Stage7Relationship,
     _sensation_options: dict[str, object] | None = None,
     _core_options: dict[str, object] | None = None,
     _judgment_options: dict[str, object] | None = None,
     _language_options: dict[str, object] | None = None,
+    _memory_options: dict[str, object] | None = None,
     _relationship_options: dict[str, object] | None = None,
 ) -> Stage8System:
     now_factory = persistence_time_factory or (
@@ -236,10 +238,11 @@ def make_stage8_system(
         **(_sensation_options or {}),
     )
     state = Stage7State()
-    memory = Stage7Memory(
+    memory = _memory_factory(
         available=memory_available,
         review_id_factory=candidate_review_id_factory,
         memory_item_id_factory=memory_item_id_factory,
+        **(_memory_options or {}),
     )
     relationship = _relationship_factory(
         known_counterpart_id=known_counterpart_id,

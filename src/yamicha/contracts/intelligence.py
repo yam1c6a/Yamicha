@@ -7,11 +7,20 @@ from enum import StrEnum
 
 from .retention import Stage6InputOutcome
 from .time import ExternalTime
+from .conversation_memory import (
+    ConversationMemoryCandidate,
+    ConversationMemoryForgetRecord,
+    ConversationMemoryForgetRequest,
+    ConversationMemoryInterpretation,
+    ConversationMemoryReview,
+    ConversationMemoryWindow,
+)
 from .dialogue import DialogueContextWindow
 
 
 class IntelligencePurpose(StrEnum):
     DIALOGUE_RESPONSE_CANDIDATE = "dialogue_response_candidate"
+    MEMORY_INTERPRETATION_CANDIDATE = "memory_interpretation_candidate"
 
 
 class IntelligenceResultStatus(StrEnum):
@@ -66,6 +75,7 @@ class AuxiliaryIntelligenceProposal:
     constraints: IntelligenceConstraints
     proposed_at: ExternalTime
     dialogue_context: DialogueContextWindow | None = None
+    conversation_memory: ConversationMemoryWindow | None = None
 
     def __post_init__(self) -> None:
         required = (
@@ -87,6 +97,19 @@ class AuxiliaryIntelligenceProposal:
             ):
                 raise ValueError("dialogue context does not match the current input")
             input_characters = self.dialogue_context.total_characters
+        if self.conversation_memory is not None:
+            if (
+                self.conversation_memory.current_input_reference
+                != self.input_source_reference
+            ):
+                raise ValueError("conversation memory does not match the current input")
+            input_characters += self.conversation_memory.total_characters
+            if (
+                self.conversation_memory.selections
+                and "selected_adopted_conversation_memories"
+                not in self.constraints.allowed_input_scope
+            ):
+                raise ValueError("conversation memory is outside the allowed input scope")
         if input_characters > self.constraints.max_input_characters:
             raise ValueError("intelligence proposal exceeds its input limit")
 
@@ -268,3 +291,87 @@ class Stage10InputOutcome(Stage6InputOutcome):
         )
         if not (all(value is None for value in values) or all(value is not None for value in values)):
             raise ValueError("stage-10 intelligence path must be complete or absent")
+
+
+@dataclass(frozen=True, slots=True)
+class Stage13InputOutcome(Stage10InputOutcome):
+    conversation_memory_window: ConversationMemoryWindow | None = None
+    conversation_memory_candidate: ConversationMemoryCandidate | None = None
+    conversation_memory_review: ConversationMemoryReview | None = None
+    conversation_memory_forget_request: ConversationMemoryForgetRequest | None = None
+    conversation_memory_forget_record: ConversationMemoryForgetRecord | None = None
+    memory_interpretation_request: IntegratedIntelligenceRequest | None = None
+    memory_interpretation_result: AuxiliaryIntelligenceResult | None = None
+    memory_interpretation_review: IntelligenceCandidateReview | None = None
+    memory_interpretation_adoption: IntelligenceAdoption | None = None
+    conversation_memory_interpretation: ConversationMemoryInterpretation | None = None
+
+    def __post_init__(self) -> None:
+        Stage10InputOutcome.__post_init__(self)
+        if (self.conversation_memory_candidate is None) != (
+            self.conversation_memory_review is None
+        ):
+            raise ValueError("conversation-memory candidate and review must appear together")
+        if (
+            self.conversation_memory_candidate is not None
+            and self.conversation_memory_review is not None
+            and (
+                self.conversation_memory_candidate.candidate_id
+                != self.conversation_memory_review.candidate_id
+                or self.conversation_memory_candidate.version
+                != self.conversation_memory_review.candidate_version
+            )
+        ):
+            raise ValueError("conversation-memory review does not match its candidate")
+        if (self.conversation_memory_forget_request is None) != (
+            self.conversation_memory_forget_record is None
+        ):
+            raise ValueError("conversation-memory forget request and record must appear together")
+        if (
+            self.conversation_memory_forget_request is not None
+            and self.conversation_memory_forget_record is not None
+            and self.conversation_memory_forget_request.request_id
+            != self.conversation_memory_forget_record.request_id
+        ):
+            raise ValueError("conversation-memory forget record does not match its request")
+        if self.conversation_memory_candidate is not None and (
+            self.conversation_memory_forget_request is not None
+        ):
+            raise ValueError("one input cannot retain and forget conversation memory")
+        interpretation_path = (
+            self.memory_interpretation_request,
+            self.memory_interpretation_result,
+            self.memory_interpretation_review,
+            self.memory_interpretation_adoption,
+        )
+        if not (
+            all(value is None for value in interpretation_path)
+            or all(value is not None for value in interpretation_path)
+        ):
+            raise ValueError("memory interpretation path must be complete or absent")
+        if self.memory_interpretation_request is not None:
+            request = self.memory_interpretation_request
+            result = self.memory_interpretation_result
+            review = self.memory_interpretation_review
+            adoption = self.memory_interpretation_adoption
+            assert result is not None and review is not None and adoption is not None
+            if (
+                request.proposal.purpose
+                is not IntelligencePurpose.MEMORY_INTERPRETATION_CANDIDATE
+                or result.purpose is not request.proposal.purpose
+                or result.request_id != request.request_id
+                or review.request_id != request.request_id
+                or review.result_id != result.result_id
+                or adoption.request_id != request.request_id
+                or adoption.result_id != result.result_id
+                or adoption.review_id != review.review_id
+            ):
+                raise ValueError("memory interpretation path is inconsistent")
+        if self.conversation_memory_interpretation is not None and (
+            self.memory_interpretation_adoption is None
+            or self.memory_interpretation_adoption.status
+            is not IntelligenceAdoptionStatus.ADOPTED
+            or self.conversation_memory_interpretation.lifecycle_id
+            != self.correlation_id
+        ):
+            raise ValueError("memory interpretation requires an adopted LLM candidate")

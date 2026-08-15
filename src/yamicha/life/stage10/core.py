@@ -19,6 +19,7 @@ from yamicha.contracts import (
     IntelligenceAdoption,
     IntelligenceAdoptionStatus,
     IntelligenceCandidateReview,
+    IntelligencePurpose,
     JudgmentFinalization,
 )
 from yamicha.life.stage9 import Stage9Core
@@ -120,14 +121,22 @@ class Stage10Core(Stage9Core):
             or finalization.finalized_direction is not DecisionDirection.RESPOND
         ):
             raise ValueError("intelligence adoption inputs do not identify one lifecycle")
+        candidate_is_eligible = (
+            request.proposal.purpose
+            is IntelligencePurpose.MEMORY_INTERPRETATION_CANDIDATE
+            or (
+                result.candidate is not None
+                and self._candidate_preserves_verified_identity(
+                    request,
+                    result.candidate.text,
+                )
+            )
+        )
         adopted = (
             review.accepted
             and result.candidate is not None
             and review.candidate_id == result.candidate.candidate_id
-            and self._candidate_preserves_verified_identity(
-                request,
-                result.candidate.text,
-            )
+            and candidate_is_eligible
         )
         adoption = IntelligenceAdoption(
             adoption_id=self._required_id(
@@ -149,11 +158,7 @@ class Stage10Core(Stage9Core):
                 if adopted
                 else (
                     "Core rejected a candidate that changed verified identity"
-                    if result.candidate is not None
-                    and not self._candidate_preserves_verified_identity(
-                        request,
-                        result.candidate.text,
-                    )
+                    if result.candidate is not None and not candidate_is_eligible
                     else "Core retained the deterministic fallback response"
                 )
             ),

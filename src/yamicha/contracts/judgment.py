@@ -26,7 +26,14 @@ class MemoryDecisionMaterial:
     available: bool
     related_references: tuple[str, ...] = ()
     confirmed_experience_references: tuple[str, ...] = ()
+    conversation_memory_references: tuple[str, ...] = ()
     uncertainties: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        if len(set(self.conversation_memory_references)) != len(
+            self.conversation_memory_references
+        ):
+            raise ValueError("conversation-memory material references must be unique")
 
 
 @dataclass(frozen=True, slots=True)

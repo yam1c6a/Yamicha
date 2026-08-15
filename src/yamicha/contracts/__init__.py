@@ -8,6 +8,18 @@ from .dialogue import (
     DialogueSpeaker,
     DialogueTurn,
 )
+from .conversation_memory import (
+    ConversationMemoryCandidate,
+    ConversationMemoryForgetRecord,
+    ConversationMemoryForgetRequest,
+    ConversationMemoryInterpretation,
+    ConversationMemoryInterpretationAction,
+    ConversationMemoryItem,
+    ConversationMemoryReview,
+    ConversationMemorySelection,
+    ConversationMemoryWindow,
+    ConversationMemorySubject,
+)
 from .input import (
     ContentTrust,
     EventMeaning,
@@ -162,6 +174,7 @@ from .intelligence import (
     IntelligenceResultStatus,
     IntelligenceTraceRecord,
     Stage10InputOutcome,
+    Stage13InputOutcome,
 )
 
 __all__ = [
@@ -184,6 +197,16 @@ __all__ = [
     "ClockObservation",
     "Confidentiality",
     "ContentTrust",
+    "ConversationMemoryCandidate",
+    "ConversationMemoryForgetRecord",
+    "ConversationMemoryForgetRequest",
+    "ConversationMemoryInterpretation",
+    "ConversationMemoryInterpretationAction",
+    "ConversationMemoryItem",
+    "ConversationMemoryReview",
+    "ConversationMemorySelection",
+    "ConversationMemoryWindow",
+    "ConversationMemorySubject",
     "CycleOutcome",
     "CycleStatus",
     "DecisionBasis",
@@ -295,6 +318,7 @@ __all__ = [
     "Stage6InputOutcome",
     "Stage9CapabilityOutcome",
     "Stage10InputOutcome",
+    "Stage13InputOutcome",
     "StatementKind",
     "StateSnapshot",
     "StatePersistenceSnapshot",

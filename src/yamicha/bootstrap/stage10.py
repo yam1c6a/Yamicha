@@ -116,6 +116,7 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
                 cycle=cycle,
             )
         self._prepare_dialogue_context(event)
+        self._prepare_memory_context(event)
         boundary = self._stage10_boundary.present_decision_material(event)
         context = self._stage10_core.build_judgment_context(cycle, boundary)
         judgment = self._stage10_judgment.evaluate(context)
@@ -198,6 +199,13 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
         self._record_dialogue_context(event, dialogue_output)
         candidates = self._stage10_judgment.propose_retention(record)
         reviews = self._stage10_core.route_retention_candidates(candidates)
+        self._record_long_term_memory(
+            event,
+            dialogue_output,
+            record,
+            finalization,
+            intelligence_result,
+        )
         outcome = Stage10InputOutcome(
             correlation_id=correlation_id,
             disposition=InputDisposition.ACCEPTED,
@@ -238,6 +246,9 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
     def _prepare_dialogue_context(self, event) -> None:
         """Stage hook for an owner to prepare current dialogue material."""
 
+    def _prepare_memory_context(self, event) -> None:
+        """Stage hook for an owner to prepare bounded long-term memory."""
+
     def _propose_dialogue_assistance(self, context, event, proposed_at: ExternalTime):
         return self._stage10_judgment.propose_dialogue_assistance(
             lifecycle_id=context.lifecycle_id,
@@ -250,6 +261,16 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
 
     def _record_dialogue_context(self, event, dialogue_output) -> None:
         """Stage hook for recording only a completed, released exchange."""
+
+    def _record_long_term_memory(
+        self,
+        event,
+        dialogue_output,
+        record,
+        finalization,
+        intelligence_result,
+    ) -> None:
+        """Stage hook for owner-reviewed long-term memory after a completed cycle."""
 
     def _store_trace(self, request, result, adoption, occurred_at: ExternalTime) -> None:
         proposal = request.proposal
@@ -302,6 +323,7 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
     @staticmethod
     def _intelligence_input_digest_payload(proposal) -> str:
         context = proposal.dialogue_context
+        memory = proposal.conversation_memory
         return json.dumps(
             {
                 "current_input": proposal.input_text,
@@ -319,6 +341,23 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
                                 "source_reference": turn.source_reference,
                             }
                             for turn in context.turns
+                        ],
+                    }
+                ),
+                "conversation_memory": (
+                    None
+                    if memory is None
+                    else {
+                        "memory_version": memory.memory_version,
+                        "selections": [
+                            {
+                                "memory_item_id": selection.memory_item_id,
+                                "memory_item_version": selection.memory_item_version,
+                                "meaning": selection.meaning,
+                                "source_references": selection.source_references,
+                                "selection_reason": selection.selection_reason,
+                            }
+                            for selection in memory.selections
                         ],
                     }
                 ),
@@ -371,6 +410,10 @@ def make_stage10_system(
     ),
     _configuration_version: str = CONFIGURATION_VERSION,
     _upgrade_from_configuration_versions: tuple[str, ...] = ("stage9-v1",),
+    _core_factory: Callable[..., Stage10Core] = Stage10Core,
+    _judgment_factory: Callable[..., Stage10Judgment] = Stage10Judgment,
+    _core_options: dict[str, object] | None = None,
+    _judgment_options: dict[str, object] | None = None,
     **stage9_options: object,
 ) -> Stage10System:
     constraints = IntelligenceConstraints(
@@ -411,8 +454,8 @@ def make_stage10_system(
         _upgrade_from_configuration_versions=(
             _upgrade_from_configuration_versions
         ),
-        _core_factory=Stage10Core,
-        _judgment_factory=Stage10Judgment,
+        _core_factory=_core_factory,
+        _judgment_factory=_judgment_factory,
         _language_factory=Stage10Language,
         _core_options={
             "intelligence_request_id_factory": intelligence_request_id_factory,
@@ -420,10 +463,12 @@ def make_stage10_system(
                 intelligence_authorization_id_factory
             ),
             "intelligence_adoption_id_factory": intelligence_adoption_id_factory,
+            **(_core_options or {}),
         },
         _judgment_options={
             "intelligence_proposal_id_factory": intelligence_proposal_id_factory,
             "intelligence_review_id_factory": intelligence_review_id_factory,
+            **(_judgment_options or {}),
         },
         _language_options={
             "intelligence_artifact_id_factory": intelligence_artifact_id_factory,

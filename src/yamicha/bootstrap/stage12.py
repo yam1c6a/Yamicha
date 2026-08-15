@@ -127,18 +127,21 @@ def make_stage12_system(
     dialogue_max_exchanges: int = DEFAULT_DIALOGUE_MAX_EXCHANGES,
     dialogue_context_id_factory: Callable[[], str] | None = None,
     dialogue_turn_id_factory: Callable[[], str] | None = None,
+    _configuration_version: str = CONFIGURATION_VERSION,
+    _upgrade_from_configuration_versions: tuple[str, ...] = ("stage10-v1",),
+    _intelligence_allowed_input_scope: tuple[str, ...] = (
+        "current_verified_text",
+        "verified_recent_dialogue_turns",
+        "verified_speaker_and_model_identity",
+    ),
     **stage10_options: object,
 ) -> Stage12System:
     if dialogue_max_exchanges <= 0:
         raise ValueError("dialogue exchange limit must be positive")
     base = make_stage10_system(
-        _configuration_version=CONFIGURATION_VERSION,
-        _upgrade_from_configuration_versions=("stage10-v1",),
-        _intelligence_allowed_input_scope=(
-            "current_verified_text",
-            "verified_recent_dialogue_turns",
-            "verified_speaker_and_model_identity",
-        ),
+        _configuration_version=_configuration_version,
+        _upgrade_from_configuration_versions=_upgrade_from_configuration_versions,
+        _intelligence_allowed_input_scope=_intelligence_allowed_input_scope,
         _relationship_factory=Stage12Relationship,
         _relationship_options={
             "context_id_factory": dialogue_context_id_factory,
