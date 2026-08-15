@@ -115,6 +115,7 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
                 disposition=InputDisposition.DUPLICATE,
                 cycle=cycle,
             )
+        self._prepare_dialogue_context(event)
         boundary = self._stage10_boundary.present_decision_material(event)
         context = self._stage10_core.build_judgment_context(cycle, boundary)
         judgment = self._stage10_judgment.evaluate(context)
@@ -135,13 +136,10 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
             and len(event.meaning.normalized_text)
             <= self._intelligence_constraints.max_input_characters
         ):
-            proposal = self._stage10_judgment.propose_dialogue_assistance(
-                lifecycle_id=context.lifecycle_id,
-                model=self._intelligence_model,
-                input_text=event.meaning.normalized_text,
-                input_source_reference=event.event_id,
-                constraints=self._intelligence_constraints,
-                proposed_at=raw.received_at,
+            proposal = self._propose_dialogue_assistance(
+                context,
+                event,
+                raw.received_at,
             )
             intelligence_request = self._stage10_core.integrate_intelligence_request(
                 proposal,
@@ -197,6 +195,7 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
             expression_review=expression_review,
             dialogue_output=dialogue_output,
         )
+        self._record_dialogue_context(event, dialogue_output)
         candidates = self._stage10_judgment.propose_retention(record)
         reviews = self._stage10_core.route_retention_candidates(candidates)
         outcome = Stage10InputOutcome(
@@ -236,6 +235,22 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
             raise
         return outcome
 
+    def _prepare_dialogue_context(self, event) -> None:
+        """Stage hook for an owner to prepare current dialogue material."""
+
+    def _propose_dialogue_assistance(self, context, event, proposed_at: ExternalTime):
+        return self._stage10_judgment.propose_dialogue_assistance(
+            lifecycle_id=context.lifecycle_id,
+            model=self._intelligence_model,
+            input_text=event.meaning.normalized_text,
+            input_source_reference=event.event_id,
+            constraints=self._intelligence_constraints,
+            proposed_at=proposed_at,
+        )
+
+    def _record_dialogue_context(self, event, dialogue_output) -> None:
+        """Stage hook for recording only a completed, released exchange."""
+
     def _store_trace(self, request, result, adoption, occurred_at: ExternalTime) -> None:
         proposal = request.proposal
         constraints_payload = json.dumps(
@@ -268,7 +283,9 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
             purpose=proposal.purpose,
             model=proposal.model,
             input_scope=proposal.constraints.allowed_input_scope,
-            input_digest=self._digest(proposal.input_text),
+            input_digest=self._digest(
+                self._intelligence_input_digest_payload(proposal)
+            ),
             constraints_digest=self._digest(constraints_payload),
             result_status=result.status,
             output_digest=(None if candidate is None else self._digest(candidate.text)),
@@ -281,6 +298,35 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
     @staticmethod
     def _digest(value: str) -> str:
         return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _intelligence_input_digest_payload(proposal) -> str:
+        context = proposal.dialogue_context
+        return json.dumps(
+            {
+                "current_input": proposal.input_text,
+                "context": (
+                    None
+                    if context is None
+                    else {
+                        "context_id": context.context_id,
+                        "context_version": context.context_version,
+                        "turns": [
+                            {
+                                "turn_id": turn.turn_id,
+                                "speaker": turn.speaker.value,
+                                "text": turn.text,
+                                "source_reference": turn.source_reference,
+                            }
+                            for turn in context.turns
+                        ],
+                    }
+                ),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
 
 
 @dataclass(slots=True, kw_only=True)
@@ -319,16 +365,19 @@ def make_stage10_system(
     intelligence_adoption_id_factory: Callable[[], str] | None = None,
     intelligence_artifact_id_factory: Callable[[], str] | None = None,
     intelligence_trace_id_factory: Callable[[], str] | None = None,
+    _intelligence_allowed_input_scope: tuple[str, ...] = (
+        "current_verified_text",
+        "verified_speaker_and_model_identity",
+    ),
+    _configuration_version: str = CONFIGURATION_VERSION,
+    _upgrade_from_configuration_versions: tuple[str, ...] = ("stage9-v1",),
     **stage9_options: object,
 ) -> Stage10System:
     constraints = IntelligenceConstraints(
         max_input_characters=intelligence_max_input_characters,
         max_output_characters=intelligence_max_output_characters,
         timeout_seconds=intelligence_timeout_seconds,
-        allowed_input_scope=(
-            "current_verified_text",
-            "verified_speaker_and_model_identity",
-        ),
+        allowed_input_scope=_intelligence_allowed_input_scope,
         output_format='json:{"reply":"string"}',
         speaker_name="Yamicha",
         forbidden_self_identification=(
@@ -358,8 +407,10 @@ def make_stage10_system(
         subject_id_factory=subject_id_factory,
         session_id_factory=session_id_factory,
         input_correlation_id_factory=input_correlation_id_factory,
-        _configuration_version=CONFIGURATION_VERSION,
-        _upgrade_from_configuration_versions=("stage9-v1",),
+        _configuration_version=_configuration_version,
+        _upgrade_from_configuration_versions=(
+            _upgrade_from_configuration_versions
+        ),
         _core_factory=Stage10Core,
         _judgment_factory=Stage10Judgment,
         _language_factory=Stage10Language,

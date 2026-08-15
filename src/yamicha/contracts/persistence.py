@@ -9,6 +9,7 @@ from .lifecycle import OperatingState
 from .retention import CandidateReview, LifecycleRecord, MemoryItem, RetentionCandidate
 from .time import ExternalTime, InternalTime
 from .protection import ProtectionMode
+from .dialogue import DialogueContext, DialogueContextStatus
 
 
 class PreviousExit(StrEnum):
@@ -84,10 +85,36 @@ class MemoryPersistenceSnapshot:
 class RelationshipPersistenceSnapshot:
     known_counterpart_id: str
     version: int = 1
+    active_dialogue_context: DialogueContext | None = None
+    retired_dialogue_context_ids: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.known_counterpart_id.strip() or self.version < 1:
             raise ValueError("persisted relationship state is invalid")
+        if self.active_dialogue_context is not None and (
+            self.active_dialogue_context.counterpart_id
+            != self.known_counterpart_id
+            or self.active_dialogue_context.status
+            is not DialogueContextStatus.ACTIVE
+        ):
+            raise ValueError("persisted active dialogue context is invalid")
+        if (
+            any(not value.strip() for value in self.retired_dialogue_context_ids)
+            or len(set(self.retired_dialogue_context_ids))
+            != len(self.retired_dialogue_context_ids)
+            or (
+                self.active_dialogue_context is not None
+                and self.active_dialogue_context.context_id
+                in self.retired_dialogue_context_ids
+            )
+            or (
+                self.active_dialogue_context is not None
+                and self.active_dialogue_context.previous_context_id is not None
+                and self.active_dialogue_context.previous_context_id
+                not in self.retired_dialogue_context_ids
+            )
+        ):
+            raise ValueError("persisted retired dialogue context IDs are invalid")
 
 
 @dataclass(frozen=True, slots=True)

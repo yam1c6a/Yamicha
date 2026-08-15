@@ -7,6 +7,7 @@ from enum import StrEnum
 
 from .retention import Stage6InputOutcome
 from .time import ExternalTime
+from .dialogue import DialogueContextWindow
 
 
 class IntelligencePurpose(StrEnum):
@@ -64,6 +65,7 @@ class AuxiliaryIntelligenceProposal:
     input_source_reference: str
     constraints: IntelligenceConstraints
     proposed_at: ExternalTime
+    dialogue_context: DialogueContextWindow | None = None
 
     def __post_init__(self) -> None:
         required = (
@@ -75,7 +77,17 @@ class AuxiliaryIntelligenceProposal:
         )
         if not all(value.strip() for value in required):
             raise ValueError("auxiliary-intelligence proposal is incomplete")
-        if len(self.input_text) > self.constraints.max_input_characters:
+        input_characters = len(self.input_text)
+        if self.dialogue_context is not None:
+            if (
+                self.dialogue_context.current_input_reference
+                != self.input_source_reference
+                or self.dialogue_context.current_input_characters
+                != len(self.input_text)
+            ):
+                raise ValueError("dialogue context does not match the current input")
+            input_characters = self.dialogue_context.total_characters
+        if input_characters > self.constraints.max_input_characters:
             raise ValueError("intelligence proposal exceeds its input limit")
 
 

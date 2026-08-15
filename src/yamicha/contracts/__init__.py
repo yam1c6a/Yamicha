@@ -1,6 +1,13 @@
 """Technology-independent contracts shared across responsibility boundaries."""
 
 from .messages import MessageEnvelope, VerificationState
+from .dialogue import (
+    DialogueContext,
+    DialogueContextStatus,
+    DialogueContextWindow,
+    DialogueSpeaker,
+    DialogueTurn,
+)
 from .input import (
     ContentTrust,
     EventMeaning,
@@ -183,7 +190,12 @@ __all__ = [
     "DecisionCandidate",
     "DecisionDirection",
     "DecisionProposal",
+    "DialogueContext",
+    "DialogueContextStatus",
+    "DialogueContextWindow",
     "DialogueOutput",
+    "DialogueSpeaker",
+    "DialogueTurn",
     "ElapsedTime",
     "EventMeaning",
     "ExpressionArtifact",

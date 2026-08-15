@@ -1,7 +1,7 @@
 [project]
 name = "yamicha"
-version = "0.1.0"
-description = "A minimal implementation foundation for Yamicha"
+version = "0.2.0"
+description = "A persistent dialogue-continuity implementation for Yamicha"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []

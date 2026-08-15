@@ -16,7 +16,8 @@ from .stage6 import Stage6System
 from .stage7 import Stage7System
 from .stage8 import Stage8System
 from .stage9 import Stage9System
-from .stage10 import Stage10System, make_stage10_system
+from .stage10 import Stage10System
+from .stage12 import Stage12System, make_stage12_system
 
 
 class InteractiveConsole:
@@ -25,7 +26,14 @@ class InteractiveConsole:
         *,
         input_stream: TextIO,
         output_stream: TextIO,
-        system: Stage6System | Stage7System | Stage8System | Stage9System | Stage10System,
+        system: (
+            Stage6System
+            | Stage7System
+            | Stage8System
+            | Stage9System
+            | Stage10System
+            | Stage12System
+        ),
         input_id_factory: Callable[[], str] | None = None,
         external_time_factory: Callable[[], ExternalTime] | None = None,
         source_id: str = "local-console",
@@ -54,6 +62,8 @@ class InteractiveConsole:
             )
             self._output.write(f"状態: {protection_label}\n")
         self._output.write("終了するには /quit を入力してください。\n")
+        if isinstance(self._system, Stage12System):
+            self._output.write("新しい会話を始めるには /new を入力してください。\n")
         try:
             while True:
                 self._output.write("you> ")
@@ -65,6 +75,16 @@ class InteractiveConsole:
                 if text.strip() == "/quit":
                     break
                 if not text.strip():
+                    continue
+                if text.strip() == "/new" and isinstance(
+                    self._system,
+                    Stage12System,
+                ):
+                    self._system.start_new_dialogue_context(
+                        self._external_time_factory()
+                    )
+                    self._output.write("新しい会話を開始しました。\n")
+                    self._output.flush()
                     continue
                 raw = self._channel.make_text_input(
                     input_id=self._required_input_id(),
@@ -108,7 +128,7 @@ def run_interactive_console(
     persistence_path: str | Path = Path(".yamicha/yamicha.sqlite3"),
 ) -> int:
     source_id = "local-console"
-    system = make_stage10_system(
+    system = make_stage12_system(
         persistence_path=persistence_path,
         known_counterpart_id=source_id,
         capability_authority_id=source_id,

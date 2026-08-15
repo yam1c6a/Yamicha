@@ -39,6 +39,20 @@ class RelationshipDecisionMaterial:
     boundary_violation: bool
     boundary_reasons: tuple[str, ...] = ()
     current_consent: bool | None = None
+    dialogue_context_id: str | None = None
+    dialogue_context_version: int | None = None
+
+    def __post_init__(self) -> None:
+        if (self.dialogue_context_id is None) != (
+            self.dialogue_context_version is None
+        ):
+            raise ValueError("dialogue context identity and version must appear together")
+        if self.dialogue_context_id is not None and (
+            not self.dialogue_context_id.strip()
+            or self.dialogue_context_version is None
+            or self.dialogue_context_version < 1
+        ):
+            raise ValueError("dialogue context material is invalid")
 
 
 @dataclass(frozen=True, slots=True)

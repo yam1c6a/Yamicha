@@ -10,6 +10,11 @@ from yamicha.contracts import (
     CandidateDisposition,
     CandidateReview,
     CandidateReviewKind,
+    ContentTrust,
+    DialogueContext,
+    DialogueContextStatus,
+    DialogueSpeaker,
+    DialogueTurn,
     ExternalTime,
     InformationCertainty,
     InternalTime,
@@ -214,6 +219,72 @@ def _read_item(data: dict[str, Any]) -> MemoryItem:
     )
 
 
+def _dialogue_turn_to_data(turn: DialogueTurn) -> dict[str, Any]:
+    return {
+        "turn_id": turn.turn_id,
+        "context_id": turn.context_id,
+        "lifecycle_id": turn.lifecycle_id,
+        "speaker": turn.speaker.value,
+        "text": turn.text,
+        "source_reference": turn.source_reference,
+        "occurred_at": _external(turn.occurred_at),
+        "verified": turn.verified,
+        "content_trust": (
+            None if turn.content_trust is None else turn.content_trust.value
+        ),
+    }
+
+
+def _read_dialogue_turn(data: dict[str, Any]) -> DialogueTurn:
+    trust = data.get("content_trust")
+    return DialogueTurn(
+        turn_id=str(data["turn_id"]),
+        context_id=str(data["context_id"]),
+        lifecycle_id=str(data["lifecycle_id"]),
+        speaker=DialogueSpeaker(data["speaker"]),
+        text=str(data["text"]),
+        source_reference=str(data["source_reference"]),
+        occurred_at=_read_external(data["occurred_at"]),
+        verified=bool(data["verified"]),
+        content_trust=None if trust is None else ContentTrust(trust),
+    )
+
+
+def _dialogue_context_to_data(context: DialogueContext) -> dict[str, Any]:
+    return {
+        "context_id": context.context_id,
+        "counterpart_id": context.counterpart_id,
+        "status": context.status.value,
+        "turns": [_dialogue_turn_to_data(turn) for turn in context.turns],
+        "version": context.version,
+        "started_at": _external(context.started_at),
+        "updated_at": _external(context.updated_at),
+        "closed_at": (
+            None if context.closed_at is None else _external(context.closed_at)
+        ),
+        "previous_context_id": context.previous_context_id,
+    }
+
+
+def _read_dialogue_context(data: dict[str, Any]) -> DialogueContext:
+    closed_at = data.get("closed_at")
+    return DialogueContext(
+        context_id=str(data["context_id"]),
+        counterpart_id=str(data["counterpart_id"]),
+        status=DialogueContextStatus(data["status"]),
+        turns=tuple(_read_dialogue_turn(turn) for turn in data["turns"]),
+        version=int(data["version"]),
+        started_at=_read_external(data["started_at"]),
+        updated_at=_read_external(data["updated_at"]),
+        closed_at=None if closed_at is None else _read_external(closed_at),
+        previous_context_id=(
+            None
+            if data.get("previous_context_id") is None
+            else str(data["previous_context_id"])
+        ),
+    )
+
+
 def _snapshot_to_data(snapshot: PersistenceSnapshot) -> dict[str, Any]:
     state = snapshot.state
     memory = snapshot.memory
@@ -248,6 +319,16 @@ def _snapshot_to_data(snapshot: PersistenceSnapshot) -> dict[str, Any]:
         "relationship": {
             "known_counterpart_id": snapshot.relationship.known_counterpart_id,
             "version": snapshot.relationship.version,
+            "active_dialogue_context": (
+                None
+                if snapshot.relationship.active_dialogue_context is None
+                else _dialogue_context_to_data(
+                    snapshot.relationship.active_dialogue_context
+                )
+            ),
+            "retired_dialogue_context_ids": list(
+                snapshot.relationship.retired_dialogue_context_ids
+            ),
         },
         "protection": {
             "normal_dialogue_output_enabled": (
@@ -303,6 +384,15 @@ def _snapshot_from_data(data: dict[str, Any]) -> PersistenceSnapshot:
         relationship=RelationshipPersistenceSnapshot(
             known_counterpart_id=str(relationship["known_counterpart_id"]),
             version=int(relationship["version"]),
+            active_dialogue_context=(
+                None
+                if relationship.get("active_dialogue_context") is None
+                else _read_dialogue_context(relationship["active_dialogue_context"])
+            ),
+            retired_dialogue_context_ids=tuple(
+                str(value)
+                for value in relationship.get("retired_dialogue_context_ids", ())
+            ),
         ),
         protection=ProtectionPersistenceSnapshot(
             normal_dialogue_output_enabled=bool(
