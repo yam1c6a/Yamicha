@@ -134,6 +134,8 @@ def make_stage12_system(
         "verified_recent_dialogue_turns",
         "verified_speaker_and_model_identity",
     ),
+    _relationship_factory: type[Stage12Relationship] = Stage12Relationship,
+    _relationship_options: dict[str, object] | None = None,
     **stage10_options: object,
 ) -> Stage12System:
     if dialogue_max_exchanges <= 0:
@@ -142,10 +144,11 @@ def make_stage12_system(
         _configuration_version=_configuration_version,
         _upgrade_from_configuration_versions=_upgrade_from_configuration_versions,
         _intelligence_allowed_input_scope=_intelligence_allowed_input_scope,
-        _relationship_factory=Stage12Relationship,
+        _relationship_factory=_relationship_factory,
         _relationship_options={
             "context_id_factory": dialogue_context_id_factory,
             "turn_id_factory": dialogue_turn_id_factory,
+            **(_relationship_options or {}),
         },
         **stage10_options,
     )

@@ -302,6 +302,14 @@ def make_stage13_system(
     conversation_memory_item_id_factory: Callable[[], str] | None = None,
     conversation_memory_forget_request_id_factory: Callable[[], str] | None = None,
     conversation_memory_forget_record_id_factory: Callable[[], str] | None = None,
+    _configuration_version: str = CONFIGURATION_VERSION,
+    _upgrade_from_configuration_versions: tuple[str, ...] = ("stage12-v1",),
+    _memory_factory: type[Stage13Memory] = Stage13Memory,
+    _memory_options: dict[str, object] | None = None,
+    _core_factory: type[Stage13Core] = Stage13Core,
+    _judgment_factory: type[Stage13Judgment] = Stage13Judgment,
+    _judgment_options: dict[str, object] | None = None,
+    _relationship_factory=None,
     **stage12_options: object,
 ) -> Stage13System:
     if conversation_memory_max_items <= 0:
@@ -309,15 +317,15 @@ def make_stage13_system(
     if conversation_memory_max_characters < 0:
         raise ValueError("conversation-memory character limit must not be negative")
     base = make_stage12_system(
-        _configuration_version=CONFIGURATION_VERSION,
-        _upgrade_from_configuration_versions=("stage12-v1",),
+        _configuration_version=_configuration_version,
+        _upgrade_from_configuration_versions=_upgrade_from_configuration_versions,
         _intelligence_allowed_input_scope=(
             "current_verified_text",
             "verified_recent_dialogue_turns",
             "selected_adopted_conversation_memories",
             "verified_speaker_and_model_identity",
         ),
-        _memory_factory=Stage13Memory,
+        _memory_factory=_memory_factory,
         _memory_options={
             "conversation_review_id_factory": conversation_memory_review_id_factory,
             "conversation_memory_item_id_factory": (
@@ -326,9 +334,10 @@ def make_stage13_system(
             "conversation_forget_record_id_factory": (
                 conversation_memory_forget_record_id_factory
             ),
+            **(_memory_options or {}),
         },
-        _core_factory=Stage13Core,
-        _judgment_factory=Stage13Judgment,
+        _core_factory=_core_factory,
+        _judgment_factory=_judgment_factory,
         _judgment_options={
             "conversation_memory_candidate_id_factory": (
                 conversation_memory_candidate_id_factory
@@ -336,7 +345,13 @@ def make_stage13_system(
             "conversation_memory_forget_request_id_factory": (
                 conversation_memory_forget_request_id_factory
             ),
+            **(_judgment_options or {}),
         },
+        **(
+            {}
+            if _relationship_factory is None
+            else {"_relationship_factory": _relationship_factory}
+        ),
         **stage12_options,
     )
     memory = base.memory

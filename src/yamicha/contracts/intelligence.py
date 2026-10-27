@@ -11,7 +11,10 @@ from .conversation_memory import (
     ConversationMemoryCandidate,
     ConversationMemoryForgetRecord,
     ConversationMemoryForgetRequest,
+    ConversationMemoryGovernanceRecord,
+    ConversationMemoryGovernanceRequest,
     ConversationMemoryInterpretation,
+    ConversationMemoryPendingConfirmation,
     ConversationMemoryReview,
     ConversationMemoryWindow,
 )
@@ -375,3 +378,23 @@ class Stage13InputOutcome(Stage10InputOutcome):
             != self.correlation_id
         ):
             raise ValueError("memory interpretation requires an adopted LLM candidate")
+
+
+@dataclass(frozen=True, slots=True)
+class Stage14InputOutcome(Stage13InputOutcome):
+    conversation_memory_governance_request: ConversationMemoryGovernanceRequest | None = None
+    conversation_memory_governance_record: ConversationMemoryGovernanceRecord | None = None
+    conversation_memory_pending_confirmation: ConversationMemoryPendingConfirmation | None = None
+
+    def __post_init__(self) -> None:
+        Stage13InputOutcome.__post_init__(self)
+        if (self.conversation_memory_governance_request is None) != (
+            self.conversation_memory_governance_record is None
+        ):
+            raise ValueError("memory governance request and record must appear together")
+        if self.conversation_memory_governance_request is not None:
+            request = self.conversation_memory_governance_request
+            record = self.conversation_memory_governance_record
+            assert record is not None
+            if request.request_id != record.request_id:
+                raise ValueError("memory governance record does not match its request")

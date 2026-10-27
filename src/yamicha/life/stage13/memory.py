@@ -118,6 +118,7 @@ class Stage13Memory(Stage7Memory):
         searchable_query = query
         for marker in self._SEARCH_IGNORED:
             searchable_query = searchable_query.replace(self._normalized(marker), "")
+        targeted_literal = searchable_query.removesuffix(self._normalized("を"))
         query_fragments = self._fragments(searchable_query)
         ranked: list[tuple[int, ConversationMemoryItem, str]] = []
         for item in self._conversation_items.values():
@@ -127,6 +128,10 @@ class Stage13Memory(Stage7Memory):
             if bare_forget_requested:
                 ranked.append(
                     (1, item, "bare forgetting request targets latest memory")
+                )
+            elif targeted_literal and targeted_literal in self._normalized(item.meaning):
+                ranked.append(
+                    (200, item, f"explicit target text: {targeted_literal}")
                 )
             elif shared:
                 fragments = "、".join(

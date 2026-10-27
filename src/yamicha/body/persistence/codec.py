@@ -13,7 +13,12 @@ from yamicha.contracts import (
     ContentTrust,
     ConversationMemoryCandidate,
     ConversationMemoryForgetRecord,
+    ConversationMemoryGovernanceRecord,
+    ConversationMemoryGovernanceRequest,
     ConversationMemoryItem,
+    ConversationMemoryOperationKind,
+    ConversationMemoryOperationStatus,
+    ConversationMemoryPendingConfirmation,
     ConversationMemoryReview,
     DialogueContext,
     DialogueContextStatus,
@@ -310,6 +315,8 @@ def _conversation_item_to_data(item: ConversationMemoryItem) -> dict[str, Any]:
             None if item.deactivated_at is None else _external(item.deactivated_at)
         ),
         "deactivation_reason": item.deactivation_reason,
+        "physically_deleted": item.physically_deleted,
+        "content_digest": item.content_digest,
     }
 
 
@@ -341,6 +348,12 @@ def _read_conversation_item(data: dict[str, Any]) -> ConversationMemoryItem:
             None
             if data.get("deactivation_reason") is None
             else str(data["deactivation_reason"])
+        ),
+        physically_deleted=bool(data.get("physically_deleted", False)),
+        content_digest=(
+            None
+            if data.get("content_digest") is None
+            else str(data["content_digest"])
         ),
     )
 
@@ -377,6 +390,135 @@ def _read_conversation_forget_record(
         reason=str(data["reason"]),
         occurred_at=_read_external(data["occurred_at"]),
         physical_deletion=bool(data.get("physical_deletion", False)),
+    )
+
+
+def _governance_request_to_data(
+    request: ConversationMemoryGovernanceRequest,
+) -> dict[str, Any]:
+    return {
+        "request_id": request.request_id,
+        "lifecycle_id": request.lifecycle_id,
+        "counterpart_id": request.counterpart_id,
+        "operation": request.operation.value,
+        "target_items": [list(value) for value in request.target_items],
+        "source_reference": request.source_reference,
+        "reason": request.reason,
+        "requested_at": _external(request.requested_at),
+        "replacement_meaning": request.replacement_meaning,
+        "replacement_certainty": (
+            None
+            if request.replacement_certainty is None
+            else request.replacement_certainty.value
+        ),
+        "confirmed": request.confirmed,
+    }
+
+
+def _read_governance_request(
+    data: dict[str, Any],
+) -> ConversationMemoryGovernanceRequest:
+    return ConversationMemoryGovernanceRequest(
+        request_id=str(data["request_id"]),
+        lifecycle_id=str(data["lifecycle_id"]),
+        counterpart_id=str(data["counterpart_id"]),
+        operation=ConversationMemoryOperationKind(data["operation"]),
+        target_items=tuple(
+            (str(value[0]), int(value[1])) for value in data["target_items"]
+        ),
+        source_reference=str(data["source_reference"]),
+        reason=str(data["reason"]),
+        requested_at=_read_external(data["requested_at"]),
+        replacement_meaning=(
+            None
+            if data.get("replacement_meaning") is None
+            else str(data["replacement_meaning"])
+        ),
+        replacement_certainty=(
+            None
+            if data.get("replacement_certainty") is None
+            else InformationCertainty(data["replacement_certainty"])
+        ),
+        confirmed=bool(data.get("confirmed", False)),
+    )
+
+
+def _governance_record_to_data(
+    record: ConversationMemoryGovernanceRecord,
+) -> dict[str, Any]:
+    return {
+        "record_id": record.record_id,
+        "request_id": record.request_id,
+        "lifecycle_id": record.lifecycle_id,
+        "counterpart_id": record.counterpart_id,
+        "operation": record.operation.value,
+        "status": record.status.value,
+        "affected_items": [list(value) for value in record.affected_items],
+        "source_reference": record.source_reference,
+        "reason": record.reason,
+        "occurred_at": _external(record.occurred_at),
+        "previous_meaning": record.previous_meaning,
+        "replacement_meaning": record.replacement_meaning,
+        "content_digests": list(record.content_digests),
+        "residual_scopes": list(record.residual_scopes),
+        "replaces_item_id": record.replaces_item_id,
+    }
+
+
+def _read_governance_record(
+    data: dict[str, Any],
+) -> ConversationMemoryGovernanceRecord:
+    return ConversationMemoryGovernanceRecord(
+        record_id=str(data["record_id"]),
+        request_id=str(data["request_id"]),
+        lifecycle_id=str(data["lifecycle_id"]),
+        counterpart_id=str(data["counterpart_id"]),
+        operation=ConversationMemoryOperationKind(data["operation"]),
+        status=ConversationMemoryOperationStatus(data["status"]),
+        affected_items=tuple(
+            (str(value[0]), int(value[1]), int(value[2]))
+            for value in data["affected_items"]
+        ),
+        source_reference=str(data["source_reference"]),
+        reason=str(data["reason"]),
+        occurred_at=_read_external(data["occurred_at"]),
+        previous_meaning=(
+            None
+            if data.get("previous_meaning") is None
+            else str(data["previous_meaning"])
+        ),
+        replacement_meaning=(
+            None
+            if data.get("replacement_meaning") is None
+            else str(data["replacement_meaning"])
+        ),
+        content_digests=tuple(str(value) for value in data.get("content_digests", ())),
+        residual_scopes=tuple(str(value) for value in data.get("residual_scopes", ())),
+        replaces_item_id=(
+            None
+            if data.get("replaces_item_id") is None
+            else str(data["replaces_item_id"])
+        ),
+    )
+
+
+def _pending_confirmation_to_data(
+    confirmation: ConversationMemoryPendingConfirmation,
+) -> dict[str, Any]:
+    return {
+        "confirmation_id": confirmation.confirmation_id,
+        "request": _governance_request_to_data(confirmation.request),
+        "created_at": _external(confirmation.created_at),
+    }
+
+
+def _read_pending_confirmation(
+    data: dict[str, Any],
+) -> ConversationMemoryPendingConfirmation:
+    return ConversationMemoryPendingConfirmation(
+        confirmation_id=str(data["confirmation_id"]),
+        request=_read_governance_request(data["request"]),
+        created_at=_read_external(data["created_at"]),
     )
 
 
@@ -492,6 +634,14 @@ def _snapshot_to_data(snapshot: PersistenceSnapshot) -> dict[str, Any]:
                 _conversation_forget_record_to_data(record)
                 for record in memory.conversation_forget_records
             ],
+            "conversation_governance_records": [
+                _governance_record_to_data(record)
+                for record in memory.conversation_governance_records
+            ],
+            "conversation_pending_confirmations": [
+                _pending_confirmation_to_data(confirmation)
+                for confirmation in memory.conversation_pending_confirmations
+            ],
         },
         "relationship": {
             "known_counterpart_id": snapshot.relationship.known_counterpart_id,
@@ -572,6 +722,16 @@ def _snapshot_from_data(data: dict[str, Any]) -> PersistenceSnapshot:
             conversation_forget_records=tuple(
                 _read_conversation_forget_record(record)
                 for record in memory.get("conversation_forget_records", ())
+            ),
+            conversation_governance_records=tuple(
+                _read_governance_record(record)
+                for record in memory.get("conversation_governance_records", ())
+            ),
+            conversation_pending_confirmations=tuple(
+                _read_pending_confirmation(confirmation)
+                for confirmation in memory.get(
+                    "conversation_pending_confirmations", ()
+                )
             ),
         ),
         relationship=RelationshipPersistenceSnapshot(

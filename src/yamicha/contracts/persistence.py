@@ -13,7 +13,9 @@ from .dialogue import DialogueContext, DialogueContextStatus
 from .conversation_memory import (
     ConversationMemoryCandidate,
     ConversationMemoryForgetRecord,
+    ConversationMemoryGovernanceRecord,
     ConversationMemoryItem,
+    ConversationMemoryPendingConfirmation,
     ConversationMemoryReview,
 )
 
@@ -71,6 +73,8 @@ class MemoryPersistenceSnapshot:
     conversation_reviews: tuple[ConversationMemoryReview, ...] = ()
     conversation_items: tuple[ConversationMemoryItem, ...] = ()
     conversation_forget_records: tuple[ConversationMemoryForgetRecord, ...] = ()
+    conversation_governance_records: tuple[ConversationMemoryGovernanceRecord, ...] = ()
+    conversation_pending_confirmations: tuple[ConversationMemoryPendingConfirmation, ...] = ()
 
     def __post_init__(self) -> None:
         if self.material_version < 1:
@@ -101,6 +105,13 @@ class MemoryPersistenceSnapshot:
         conversation_forget_record_ids = tuple(
             record.record_id for record in self.conversation_forget_records
         )
+        conversation_governance_record_ids = tuple(
+            record.record_id for record in self.conversation_governance_records
+        )
+        conversation_confirmation_ids = tuple(
+            confirmation.confirmation_id
+            for confirmation in self.conversation_pending_confirmations
+        )
         conversation_versions = {
             candidate.candidate_id: candidate.version
             for candidate in self.conversation_candidates
@@ -111,6 +122,10 @@ class MemoryPersistenceSnapshot:
             or len(set(conversation_item_ids)) != len(conversation_item_ids)
             or len(set(conversation_forget_record_ids))
             != len(conversation_forget_record_ids)
+            or len(set(conversation_governance_record_ids))
+            != len(conversation_governance_record_ids)
+            or len(set(conversation_confirmation_ids))
+            != len(conversation_confirmation_ids)
         ):
             raise ValueError("persisted conversation-memory IDs must be unique")
         if any(
@@ -140,6 +155,16 @@ class MemoryPersistenceSnapshot:
             for record in self.conversation_forget_records
         ):
             raise ValueError("conversation-memory forget record references an unknown item")
+        if any(
+            any(item_id not in set(conversation_item_ids) for item_id, _, _ in record.affected_items)
+            for record in self.conversation_governance_records
+        ):
+            raise ValueError("conversation-memory governance record references an unknown item")
+        if any(
+            any(item_id not in set(conversation_item_ids) for item_id, _ in confirmation.request.target_items)
+            for confirmation in self.conversation_pending_confirmations
+        ):
+            raise ValueError("conversation-memory confirmation references an unknown item")
 
 
 @dataclass(frozen=True, slots=True)

@@ -10,7 +10,13 @@ from uuid import uuid4
 
 from yamicha.adapters.channels import ConsoleChannel
 from yamicha.body.runtime import RuntimeStatus
-from yamicha.contracts import ExternalTime, InputDisposition, ProtectionMode
+from yamicha.contracts import (
+    ConversationMemoryOperationKind,
+    ConversationMemoryOperationStatus,
+    ExternalTime,
+    InputDisposition,
+    ProtectionMode,
+)
 
 from .stage6 import Stage6System
 from .stage7 import Stage7System
@@ -18,7 +24,8 @@ from .stage8 import Stage8System
 from .stage9 import Stage9System
 from .stage10 import Stage10System
 from .stage12 import Stage12System
-from .stage13 import Stage13System, make_stage13_system
+from .stage13 import Stage13System
+from .stage14 import Stage14System, make_stage14_system
 
 
 class InteractiveConsole:
@@ -35,6 +42,7 @@ class InteractiveConsole:
             | Stage10System
             | Stage12System
             | Stage13System
+            | Stage14System
         ),
         input_id_factory: Callable[[], str] | None = None,
         external_time_factory: Callable[[], ExternalTime] | None = None,
@@ -66,6 +74,8 @@ class InteractiveConsole:
         self._output.write("終了するには /quit を入力してください。\n")
         if isinstance(self._system, Stage12System):
             self._output.write("新しい会話を始めるには /new を入力してください。\n")
+        if isinstance(self._system, Stage14System):
+            self._output.write("記憶を確認するには /memory を入力してください。\n")
         try:
             while True:
                 self._output.write("you> ")
@@ -88,6 +98,12 @@ class InteractiveConsole:
                     self._output.write("新しい会話を開始しました。\n")
                     self._output.flush()
                     continue
+                if text.strip() in {"/memory", "/memory all"} and isinstance(
+                    self._system,
+                    Stage14System,
+                ):
+                    self._show_memories(include_inactive=text.strip().endswith(" all"))
+                    continue
                 raw = self._channel.make_text_input(
                     input_id=self._required_input_id(),
                     received_at=self._external_time_factory(),
@@ -99,6 +115,8 @@ class InteractiveConsole:
                     self._channel.show_dialogue_output(outcome.dialogue_output)
                 elif outcome.disposition is not InputDisposition.ACCEPTED:
                     self._channel.show_outcome(outcome)
+                if isinstance(self._system, Stage14System):
+                    self._show_governance_result(outcome)
                 self._output.flush()
         finally:
             self._stop_started_system()
@@ -111,6 +129,67 @@ class InteractiveConsole:
         if not input_id.strip():
             raise ValueError("console input ID must not be empty")
         return input_id
+
+    def _show_memories(self, *, include_inactive: bool) -> None:
+        items = self._system.list_conversation_memories(
+            self._source_id,
+            include_inactive=include_inactive,
+        )
+        if not items:
+            self._output.write("保存中の記憶はありません。\n")
+        for index, item in enumerate(items, start=1):
+            state = "有効" if item.active else "無効"
+            self._output.write(
+                f"{index}. [{state}/v{item.version}] {item.meaning}\n"
+            )
+        self._output.flush()
+
+    def _show_governance_result(self, outcome) -> None:
+        record = getattr(outcome, "conversation_memory_governance_record", None)
+        if record is None:
+            if getattr(
+                outcome,
+                "conversation_memory_pending_confirmation",
+                None,
+            ) is not None:
+                self._output.write(
+                    "物理削除の確認待ちです。「はい」または「いいえ」と"
+                    "入力してください。\n"
+                )
+            return
+        if record.status is ConversationMemoryOperationStatus.CONFIRMATION_REQUIRED:
+            if record.operation is ConversationMemoryOperationKind.PHYSICAL_DELETE:
+                pending = getattr(
+                    outcome,
+                    "conversation_memory_pending_confirmation",
+                    None,
+                )
+                count = 0 if pending is None else len(pending.request.target_items)
+                self._output.write(
+                    f"{count}件の物理削除は元に戻せません。実行する場合は「はい」、"
+                    "取り消す場合は「いいえ」と入力してください。\n"
+                )
+            else:
+                self._output.write("対象を一つに絞って指定してください。\n")
+        elif record.status is ConversationMemoryOperationStatus.NOT_FOUND:
+            self._output.write("対象となる記憶は見つかりませんでした。\n")
+        elif record.status is ConversationMemoryOperationStatus.CANCELLED:
+            self._output.write("記憶の物理削除を取り消しました。\n")
+        elif record.status is ConversationMemoryOperationStatus.PARTIAL:
+            self._output.write(
+                "記憶内容は通常利用から除外しましたが、古い保存世代の削除を"
+                "確認できませんでした。\n"
+            )
+        elif record.operation is ConversationMemoryOperationKind.CORRECTION:
+            self._output.write("記憶を訂正しました。\n")
+        elif record.operation is ConversationMemoryOperationKind.PHYSICAL_DELETE:
+            self._output.write("記憶内容を物理削除しました。\n")
+        elif record.operation is ConversationMemoryOperationKind.REEVALUATION:
+            self._output.write("記憶を再評価しました。\n")
+        elif record.operation is ConversationMemoryOperationKind.DEACTIVATION:
+            self._output.write("記憶を非活性化しました。\n")
+        elif record.operation is ConversationMemoryOperationKind.LOGICAL_FORGET:
+            self._output.write("記憶を論理的に忘れました。\n")
 
     def _stop_started_system(self) -> None:
         if isinstance(self._system, (Stage7System, Stage8System)):
@@ -130,7 +209,7 @@ def run_interactive_console(
     persistence_path: str | Path = Path(".yamicha/yamicha.sqlite3"),
 ) -> int:
     source_id = "local-console"
-    system = make_stage13_system(
+    system = make_stage14_system(
         persistence_path=persistence_path,
         known_counterpart_id=source_id,
         capability_authority_id=source_id,

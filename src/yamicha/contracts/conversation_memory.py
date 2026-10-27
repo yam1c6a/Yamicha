@@ -22,6 +22,22 @@ class ConversationMemorySubject(StrEnum):
     UNKNOWN = "unknown"
 
 
+class ConversationMemoryOperationKind(StrEnum):
+    CORRECTION = "correction"
+    DEACTIVATION = "deactivation"
+    REEVALUATION = "reevaluation"
+    LOGICAL_FORGET = "logical_forget"
+    PHYSICAL_DELETE = "physical_delete"
+
+
+class ConversationMemoryOperationStatus(StrEnum):
+    COMPLETED = "completed"
+    NOT_FOUND = "not_found"
+    CONFIRMATION_REQUIRED = "confirmation_required"
+    CANCELLED = "cancelled"
+    PARTIAL = "partial"
+
+
 @dataclass(frozen=True, slots=True)
 class ConversationMemoryInterpretation:
     interpretation_id: str
@@ -149,6 +165,8 @@ class ConversationMemoryItem:
     active: bool = True
     deactivated_at: ExternalTime | None = None
     deactivation_reason: str | None = None
+    physically_deleted: bool = False
+    content_digest: str | None = None
 
     def __post_init__(self) -> None:
         required = (
@@ -181,6 +199,11 @@ class ConversationMemoryItem:
             assert self.deactivation_reason is not None
             if not self.deactivation_reason.strip():
                 raise ValueError("conversation-memory deactivation reason is empty")
+        if self.physically_deleted:
+            if self.active or self.content_digest is None or len(self.content_digest) != 64:
+                raise ValueError("physically deleted memory requires a digest and inactivity")
+        elif self.content_digest is not None:
+            raise ValueError("only physically deleted memory carries a content digest")
 
 
 @dataclass(frozen=True, slots=True)
@@ -245,6 +268,135 @@ class ConversationMemoryForgetRecord:
             raise ValueError("conversation-memory deactivation versions are invalid")
         if self.physical_deletion:
             raise ValueError("stage-13 forgetting must not claim physical deletion")
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationMemoryGovernanceRequest:
+    request_id: str
+    lifecycle_id: str
+    counterpart_id: str
+    operation: ConversationMemoryOperationKind
+    target_items: tuple[tuple[str, int], ...]
+    source_reference: str
+    reason: str
+    requested_at: ExternalTime
+    replacement_meaning: str | None = None
+    replacement_certainty: InformationCertainty | None = None
+    confirmed: bool = False
+
+    def __post_init__(self) -> None:
+        required = (
+            self.request_id,
+            self.lifecycle_id,
+            self.counterpart_id,
+            self.source_reference,
+            self.reason,
+        )
+        if not all(value.strip() for value in required):
+            raise ValueError("conversation-memory governance request is incomplete")
+        item_ids = tuple(item_id for item_id, _ in self.target_items)
+        if len(item_ids) != len(set(item_ids)) or any(
+            not item_id.strip() or version < 1
+            for item_id, version in self.target_items
+        ):
+            raise ValueError("conversation-memory governance targets are invalid")
+        correction = self.operation is ConversationMemoryOperationKind.CORRECTION
+        if correction != (self.replacement_meaning is not None):
+            raise ValueError("only correction requires replacement meaning")
+        if self.replacement_meaning is not None and not self.replacement_meaning.strip():
+            raise ValueError("conversation-memory replacement meaning is blank")
+        reevaluation = self.operation is ConversationMemoryOperationKind.REEVALUATION
+        if reevaluation != (self.replacement_certainty is not None):
+            raise ValueError("only reevaluation requires replacement certainty")
+        if self.operation is ConversationMemoryOperationKind.PHYSICAL_DELETE:
+            if self.replacement_meaning is not None or self.replacement_certainty is not None:
+                raise ValueError("physical deletion cannot carry replacement content")
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationMemoryPendingConfirmation:
+    confirmation_id: str
+    request: ConversationMemoryGovernanceRequest
+    created_at: ExternalTime
+
+    def __post_init__(self) -> None:
+        if not self.confirmation_id.strip():
+            raise ValueError("conversation-memory confirmation ID is blank")
+        if self.request.confirmed:
+            raise ValueError("pending conversation-memory request is already confirmed")
+        if self.request.operation is not ConversationMemoryOperationKind.PHYSICAL_DELETE:
+            raise ValueError("only physical deletion requires persisted confirmation")
+        if not self.request.target_items:
+            raise ValueError("pending physical deletion requires targets")
+
+
+@dataclass(frozen=True, slots=True)
+class ConversationMemoryGovernanceRecord:
+    record_id: str
+    request_id: str
+    lifecycle_id: str
+    counterpart_id: str
+    operation: ConversationMemoryOperationKind
+    status: ConversationMemoryOperationStatus
+    affected_items: tuple[tuple[str, int, int], ...]
+    source_reference: str
+    reason: str
+    occurred_at: ExternalTime
+    previous_meaning: str | None = None
+    replacement_meaning: str | None = None
+    content_digests: tuple[str, ...] = ()
+    residual_scopes: tuple[str, ...] = ()
+    replaces_item_id: str | None = None
+
+    def __post_init__(self) -> None:
+        required = (
+            self.record_id,
+            self.request_id,
+            self.lifecycle_id,
+            self.counterpart_id,
+            self.source_reference,
+            self.reason,
+        )
+        if not all(value.strip() for value in required):
+            raise ValueError("conversation-memory governance record is incomplete")
+        ids = tuple(item_id for item_id, _, _ in self.affected_items)
+        if len(ids) != len(set(ids)) or any(
+            not item_id.strip() or old < 1 or new != old + 1
+            for item_id, old, new in self.affected_items
+        ):
+            raise ValueError("conversation-memory governance versions are invalid")
+        if self.status is ConversationMemoryOperationStatus.COMPLETED and not self.affected_items:
+            raise ValueError("completed memory governance requires an affected item")
+        if any(len(value) != 64 for value in self.content_digests):
+            raise ValueError("conversation-memory content digest is invalid")
+        correction = self.operation is ConversationMemoryOperationKind.CORRECTION
+        if correction and self.status is ConversationMemoryOperationStatus.COMPLETED:
+            if (
+                self.previous_meaning is None
+                or self.replacement_meaning is None
+                or self.replaces_item_id is None
+            ):
+                raise ValueError("correction record requires before/after replacement metadata")
+        elif not correction and any(
+            value is not None
+            for value in (
+                self.previous_meaning,
+                self.replacement_meaning,
+                self.replaces_item_id,
+            )
+        ):
+            raise ValueError("only correction records carry replacement metadata")
+        if self.operation is ConversationMemoryOperationKind.PHYSICAL_DELETE:
+            if self.status in {
+                ConversationMemoryOperationStatus.COMPLETED,
+                ConversationMemoryOperationStatus.PARTIAL,
+            } and len(self.content_digests) != len(self.affected_items):
+                raise ValueError("physical deletion requires one digest per affected item")
+            if (
+                self.status is ConversationMemoryOperationStatus.COMPLETED
+                and self.residual_scopes
+            ):
+                raise ValueError("completed physical deletion cannot report residual scope")
 
 
 @dataclass(frozen=True, slots=True)

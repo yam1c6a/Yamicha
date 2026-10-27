@@ -1,6 +1,7 @@
 """Body-owned persistence mechanisms for stage 7."""
 
 from .sqlite import (
+    PersistenceError,
     PersistenceCommitError,
     PersistenceConsistencyError,
     PersistenceCorruptionError,
@@ -9,6 +10,7 @@ from .sqlite import (
 )
 
 __all__ = [
+    "PersistenceError",
     "PersistenceCommitError",
     "PersistenceConsistencyError",
     "PersistenceCorruptionError",

@@ -157,6 +157,49 @@ class SQLitePersistenceStore:
             self._connection.rollback()
             raise PersistenceCommitError("checkpoint transaction failed") from error
 
+    def prune_checkpoints(self, *, keep_latest: int) -> int:
+        """Atomically retain only the newest committed checkpoint generations."""
+        self._ensure_open()
+        if keep_latest < 1:
+            raise ValueError("at least one checkpoint generation must be retained")
+        try:
+            self._connection.execute("BEGIN IMMEDIATE")
+            cursor = self._connection.execute(
+                """
+                DELETE FROM checkpoints
+                WHERE sequence NOT IN (
+                    SELECT sequence FROM checkpoints
+                    ORDER BY sequence DESC LIMIT ?
+                )
+                """,
+                (keep_latest,),
+            )
+            remaining = self._connection.execute(
+                "SELECT COUNT(*) AS count FROM checkpoints"
+            ).fetchone()
+            if int(remaining["count"]) < 1:
+                raise PersistenceConsistencyError(
+                    "checkpoint pruning removed every recovery generation"
+                )
+            self._connection.commit()
+            return int(cursor.rowcount)
+        except PersistenceConsistencyError:
+            self._connection.rollback()
+            raise
+        except sqlite3.DatabaseError as error:
+            self._connection.rollback()
+            raise PersistenceCommitError("checkpoint pruning transaction failed") from error
+
+    def compact_storage(self) -> None:
+        """Truncate WAL content and rebuild the database after confirmed redaction."""
+        self._ensure_open()
+        try:
+            self._connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            self._connection.execute("VACUUM")
+            self._connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+        except sqlite3.DatabaseError as error:
+            raise PersistenceCommitError("database compaction failed") from error
+
     def mark_normal_shutdown(self, session_id: str, ended_at: ExternalTime) -> None:
         self._ensure_open()
         try:
