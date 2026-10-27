@@ -334,12 +334,17 @@ def make_stage14_system(
     conversation_memory_governance_request_id_factory: Callable[[], str] | None = None,
     conversation_memory_governance_record_id_factory: Callable[[], str] | None = None,
     conversation_memory_confirmation_id_factory: Callable[[], str] | None = None,
+    _configuration_version: str = CONFIGURATION_VERSION,
+    _upgrade_from_configuration_versions: tuple[str, ...] = ("stage13-v1",),
+    _core_factory: type[Stage14Core] = Stage14Core,
+    _judgment_factory: type[Stage14Judgment] = Stage14Judgment,
+    _relationship_factory: type[Stage14Relationship] = Stage14Relationship,
     **stage13_options: object,
 ) -> Stage14System:
     policy = retention_policy or Stage14RetentionPolicy()
     base = make_stage13_system(
-        _configuration_version=CONFIGURATION_VERSION,
-        _upgrade_from_configuration_versions=("stage13-v1",),
+        _configuration_version=_configuration_version,
+        _upgrade_from_configuration_versions=_upgrade_from_configuration_versions,
         _memory_factory=Stage14Memory,
         _memory_options={
             "conversation_governance_record_id_factory": (
@@ -349,14 +354,14 @@ def make_stage14_system(
                 conversation_memory_confirmation_id_factory
             ),
         },
-        _core_factory=Stage14Core,
-        _judgment_factory=Stage14Judgment,
+        _core_factory=_core_factory,
+        _judgment_factory=_judgment_factory,
         _judgment_options={
             "conversation_memory_governance_request_id_factory": (
                 conversation_memory_governance_request_id_factory
             ),
         },
-        _relationship_factory=Stage14Relationship,
+        _relationship_factory=_relationship_factory,
         **stage13_options,
     )
     memory = base.memory

@@ -17,6 +17,7 @@ from yamicha.contracts import (
     IntelligenceResultStatus,
 )
 from yamicha.life.stage9 import Stage9Judgment
+from yamicha.contracts.relationship import RelationshipInformationWindow
 
 
 class Stage10Judgment(Stage9Judgment):
@@ -48,6 +49,7 @@ class Stage10Judgment(Stage9Judgment):
         proposed_at: ExternalTime,
         dialogue_context: DialogueContextWindow | None = None,
         conversation_memory: ConversationMemoryWindow | None = None,
+        relationship_information: RelationshipInformationWindow | None = None,
     ) -> AuxiliaryIntelligenceProposal:
         proposal = AuxiliaryIntelligenceProposal(
             proposal_id=self._required_id(
@@ -63,6 +65,7 @@ class Stage10Judgment(Stage9Judgment):
             proposed_at=proposed_at,
             dialogue_context=dialogue_context,
             conversation_memory=conversation_memory,
+            relationship_information=relationship_information,
         )
         self._intelligence_proposals[proposal.proposal_id] = proposal
         return proposal

@@ -1,6 +1,19 @@
 """Technology-independent contracts shared across responsibility boundaries."""
 
 from .messages import MessageEnvelope, VerificationState
+from .relationship import (
+    RelationshipChangeRecord,
+    RelationshipChangeRequest,
+    RelationshipChangeStatus,
+    RelationshipInformationItem,
+    RelationshipInformationKind,
+    RelationshipInformationSelection,
+    RelationshipInformationStatus,
+    RelationshipInformationWindow,
+    RelationshipInformationUsage,
+    RelationshipOperation,
+    RelationshipPendingConfirmation,
+)
 from .dialogue import (
     DialogueContext,
     DialogueContextStatus,
@@ -181,6 +194,7 @@ from .intelligence import (
     Stage10InputOutcome,
     Stage13InputOutcome,
     Stage14InputOutcome,
+    Stage15InputOutcome,
 )
 
 __all__ = [
@@ -311,6 +325,17 @@ __all__ = [
     "RenderedStatement",
     "RegisteredJudgmentStart",
     "RelationshipDecisionMaterial",
+    "RelationshipChangeRecord",
+    "RelationshipChangeRequest",
+    "RelationshipChangeStatus",
+    "RelationshipInformationItem",
+    "RelationshipInformationKind",
+    "RelationshipInformationSelection",
+    "RelationshipInformationStatus",
+    "RelationshipInformationWindow",
+    "RelationshipInformationUsage",
+    "RelationshipOperation",
+    "RelationshipPendingConfirmation",
     "RelationshipPersistenceSnapshot",
     "RetentionCandidate",
     "RetentionCandidateKind",
@@ -331,6 +356,7 @@ __all__ = [
     "Stage10InputOutcome",
     "Stage13InputOutcome",
     "Stage14InputOutcome",
+    "Stage15InputOutcome",
     "StatementKind",
     "StateSnapshot",
     "StatePersistenceSnapshot",

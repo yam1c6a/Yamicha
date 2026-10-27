@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from .relationship import RelationshipInformationWindow
 
 from .input import ContentTrust, InputDisposition, InputRejection, SensoryEvent
 from .lifecycle import DecisionDirection, OperatingState
@@ -48,6 +52,7 @@ class RelationshipDecisionMaterial:
     current_consent: bool | None = None
     dialogue_context_id: str | None = None
     dialogue_context_version: int | None = None
+    relationship_information: RelationshipInformationWindow | None = None
 
     def __post_init__(self) -> None:
         if (self.dialogue_context_id is None) != (

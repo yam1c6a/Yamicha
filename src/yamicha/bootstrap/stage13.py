@@ -310,6 +310,12 @@ def make_stage13_system(
     _judgment_factory: type[Stage13Judgment] = Stage13Judgment,
     _judgment_options: dict[str, object] | None = None,
     _relationship_factory=None,
+    _intelligence_allowed_input_scope: tuple[str, ...] = (
+        "current_verified_text",
+        "verified_recent_dialogue_turns",
+        "selected_adopted_conversation_memories",
+        "verified_speaker_and_model_identity",
+    ),
     **stage12_options: object,
 ) -> Stage13System:
     if conversation_memory_max_items <= 0:
@@ -319,12 +325,7 @@ def make_stage13_system(
     base = make_stage12_system(
         _configuration_version=_configuration_version,
         _upgrade_from_configuration_versions=_upgrade_from_configuration_versions,
-        _intelligence_allowed_input_scope=(
-            "current_verified_text",
-            "verified_recent_dialogue_turns",
-            "selected_adopted_conversation_memories",
-            "verified_speaker_and_model_identity",
-        ),
+        _intelligence_allowed_input_scope=_intelligence_allowed_input_scope,
         _memory_factory=_memory_factory,
         _memory_options={
             "conversation_review_id_factory": conversation_memory_review_id_factory,

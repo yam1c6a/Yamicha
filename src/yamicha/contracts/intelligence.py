@@ -19,6 +19,12 @@ from .conversation_memory import (
     ConversationMemoryWindow,
 )
 from .dialogue import DialogueContextWindow
+from .relationship import (
+    RelationshipChangeRecord,
+    RelationshipChangeRequest,
+    RelationshipInformationWindow,
+    RelationshipPendingConfirmation,
+)
 
 
 class IntelligencePurpose(StrEnum):
@@ -79,6 +85,7 @@ class AuxiliaryIntelligenceProposal:
     proposed_at: ExternalTime
     dialogue_context: DialogueContextWindow | None = None
     conversation_memory: ConversationMemoryWindow | None = None
+    relationship_information: RelationshipInformationWindow | None = None
 
     def __post_init__(self) -> None:
         required = (
@@ -113,6 +120,16 @@ class AuxiliaryIntelligenceProposal:
                 not in self.constraints.allowed_input_scope
             ):
                 raise ValueError("conversation memory is outside the allowed input scope")
+        if self.relationship_information is not None:
+            window = self.relationship_information
+            if window.current_input_reference != self.input_source_reference:
+                raise ValueError("relationship information does not match current input")
+            if window.selections and (
+                "selected_confirmed_relationship_information"
+                not in self.constraints.allowed_input_scope
+            ):
+                raise ValueError("relationship information is outside allowed scope")
+            input_characters += window.total_characters
         if input_characters > self.constraints.max_input_characters:
             raise ValueError("intelligence proposal exceeds its input limit")
 
@@ -398,3 +415,24 @@ class Stage14InputOutcome(Stage13InputOutcome):
             assert record is not None
             if request.request_id != record.request_id:
                 raise ValueError("memory governance record does not match its request")
+
+
+@dataclass(frozen=True, slots=True)
+class Stage15InputOutcome(Stage14InputOutcome):
+    relationship_information: RelationshipInformationWindow | None = None
+    relationship_change_request: RelationshipChangeRequest | None = None
+    relationship_change_record: RelationshipChangeRecord | None = None
+    relationship_pending_confirmation: RelationshipPendingConfirmation | None = None
+
+    def __post_init__(self) -> None:
+        Stage14InputOutcome.__post_init__(self)
+        if (self.relationship_change_request is None) != (
+            self.relationship_change_record is None
+        ):
+            raise ValueError("relationship request and record must appear together")
+        if self.relationship_change_request is not None:
+            request = self.relationship_change_request
+            record = self.relationship_change_record
+            assert record is not None
+            if request.request_id != record.request_id:
+                raise ValueError("relationship record does not match its request")

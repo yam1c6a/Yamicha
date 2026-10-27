@@ -363,6 +363,28 @@ class Stage8ProtectionBoundary(Stage7ProtectionBoundary):
         )
         return output
 
+    def authorize_information_display(self, *, source_id: str) -> bool:
+        """Check console inspection output without releasing owned content."""
+        allowed = (
+            self.mode is ProtectionMode.NORMAL
+            and self._normal_dialogue_output_enabled
+            and source_id in self._authorized_input_sources
+        )
+        self._audit(
+            at=self._audit_time_factory(),
+            kind=ProtectionAuditKind.PERMISSION,
+            actor="protection-boundary",
+            target="owned-information-display",
+            decision=(ProtectionDecision.ALLOWED if allowed else ProtectionDecision.REJECTED),
+            reason=(
+                "normal output and channel permission allow information display"
+                if allowed
+                else "protection, output settings, or channel permission block information display"
+            ),
+            correlation_id=str(uuid4()),
+        )
+        return allowed
+
     def authorize_persistence_update(
         self,
         *,

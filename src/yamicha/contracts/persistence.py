@@ -18,6 +18,14 @@ from .conversation_memory import (
     ConversationMemoryPendingConfirmation,
     ConversationMemoryReview,
 )
+from .relationship import (
+    RelationshipChangeRecord,
+    RelationshipChangeStatus,
+    RelationshipInformationItem,
+    RelationshipInformationUsage,
+    RelationshipOperation,
+    RelationshipPendingConfirmation,
+)
 
 
 class PreviousExit(StrEnum):
@@ -173,6 +181,10 @@ class RelationshipPersistenceSnapshot:
     version: int = 1
     active_dialogue_context: DialogueContext | None = None
     retired_dialogue_context_ids: tuple[str, ...] = ()
+    relationship_items: tuple[RelationshipInformationItem, ...] = ()
+    relationship_pending_confirmations: tuple[RelationshipPendingConfirmation, ...] = ()
+    relationship_changes: tuple[RelationshipChangeRecord, ...] = ()
+    relationship_usages: tuple[RelationshipInformationUsage, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.known_counterpart_id.strip() or self.version < 1:
@@ -201,6 +213,81 @@ class RelationshipPersistenceSnapshot:
             )
         ):
             raise ValueError("persisted retired dialogue context IDs are invalid")
+        items = {item.item_id: item for item in self.relationship_items}
+        if len(items) != len(self.relationship_items):
+            raise ValueError("persisted relationship item IDs must be unique")
+        if any(
+            item.counterpart_id != self.known_counterpart_id
+            for item in self.relationship_items
+        ):
+            raise ValueError("persisted relationship item crosses counterparts")
+        pending_ids = tuple(
+            pending.pending_id for pending in self.relationship_pending_confirmations
+        )
+        pending_requests = tuple(
+            pending.request.request_id
+            for pending in self.relationship_pending_confirmations
+        )
+        if (
+            len(set(pending_ids)) != len(pending_ids)
+            or len(set(pending_requests)) != len(pending_requests)
+            or len({
+                pending.request.counterpart_id
+                for pending in self.relationship_pending_confirmations
+            }) != len(self.relationship_pending_confirmations)
+        ):
+            raise ValueError("persisted relationship confirmations must be unique")
+        for pending in self.relationship_pending_confirmations:
+            request = pending.request
+            if request.counterpart_id != self.known_counterpart_id:
+                raise ValueError("persisted relationship confirmation crosses counterparts")
+            if request.operation is RelationshipOperation.CORRECT:
+                target = items.get(request.target_item_id)
+                if target is None:
+                    raise ValueError("persisted relationship confirmation target is unknown")
+        changes = self.relationship_changes
+        if (
+            len({record.record_id for record in changes}) != len(changes)
+            or len({record.request_id for record in changes}) != len(changes)
+        ):
+            raise ValueError("persisted relationship change IDs must be unique")
+        latest: dict[str, RelationshipInformationItem] = {}
+        historical_versions: dict[tuple[str, int], RelationshipInformationItem] = {}
+        for record in changes:
+            if record.counterpart_id != self.known_counterpart_id:
+                raise ValueError("persisted relationship change crosses counterparts")
+            if record.before is not None:
+                before = record.before
+                if latest.get(before.item_id) != before:
+                    raise ValueError("persisted relationship history has an inconsistent before state")
+            if record.after is None:
+                continue
+            after = record.after
+            if record.status is not RelationshipChangeStatus.COMPLETED:
+                raise ValueError("persisted relationship history contains an uncompleted update")
+            if record.before is None and (
+                after.version != 1 or after.item_id in latest
+            ):
+                raise ValueError("persisted relationship history has an invalid initial version")
+            latest[after.item_id] = after
+            historical_versions[(after.item_id, after.version)] = after
+        if latest != items:
+            raise ValueError("persisted relationship items do not match their change history")
+        if len({usage.lifecycle_id for usage in self.relationship_usages}) != len(
+            self.relationship_usages
+        ):
+            raise ValueError("persisted relationship usage lifecycle IDs must be unique")
+        if any(
+            usage.counterpart_id != self.known_counterpart_id
+            or not set(usage.item_versions).issubset(historical_versions)
+            or any(
+                not historical_versions[version].is_effective_at(usage.occurred_at)
+                for version in usage.item_versions
+                if version in historical_versions
+            )
+            for usage in self.relationship_usages
+        ):
+            raise ValueError("persisted relationship usage references unknown information")
 
 
 @dataclass(frozen=True, slots=True)

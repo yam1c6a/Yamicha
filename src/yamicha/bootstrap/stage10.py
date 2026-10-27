@@ -136,6 +136,7 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
             finalization.finalized_direction is DecisionDirection.RESPOND
             and len(event.meaning.normalized_text)
             <= self._intelligence_constraints.max_input_characters
+            and self._allows_dialogue_assistance(event)
         ):
             proposal = self._propose_dialogue_assistance(
                 context,
@@ -246,6 +247,10 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
     def _prepare_dialogue_context(self, event) -> None:
         """Stage hook for an owner to prepare current dialogue material."""
 
+    def _allows_dialogue_assistance(self, event) -> bool:
+        """Later stages may handle explicit management input deterministically."""
+        return True
+
     def _prepare_memory_context(self, event) -> None:
         """Stage hook for an owner to prepare bounded long-term memory."""
 
@@ -324,9 +329,27 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
     def _intelligence_input_digest_payload(proposal) -> str:
         context = proposal.dialogue_context
         memory = proposal.conversation_memory
+        relationship = proposal.relationship_information
         return json.dumps(
             {
                 "current_input": proposal.input_text,
+                "relationship_information": (
+                    None if relationship is None else {
+                        "relationship_version": relationship.relationship_version,
+                        "selections": [
+                            {
+                                "item_id": selection.item.item_id,
+                                "version": selection.item.version,
+                                "content": selection.item.content,
+                                "kind": selection.item.kind.value,
+                                "source_references": selection.item.source_references,
+                                "confirmation_reference": selection.item.confirmation_reference,
+                                "selection_reason": selection.selection_reason,
+                            }
+                            for selection in relationship.selections
+                        ],
+                    }
+                ),
                 "context": (
                     None
                     if context is None

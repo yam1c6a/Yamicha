@@ -42,6 +42,17 @@ from yamicha.contracts import (
     RetentionCandidateKind,
     StatePersistenceSnapshot,
 )
+from yamicha.contracts.relationship import (
+    RelationshipChangeRecord,
+    RelationshipChangeRequest,
+    RelationshipChangeStatus,
+    RelationshipInformationItem,
+    RelationshipInformationKind,
+    RelationshipInformationStatus,
+    RelationshipInformationUsage,
+    RelationshipOperation,
+    RelationshipPendingConfirmation,
+)
 
 
 def encode_snapshot(snapshot: PersistenceSnapshot) -> str:
@@ -588,6 +599,167 @@ def _read_dialogue_context(data: dict[str, Any]) -> DialogueContext:
     )
 
 
+def _relationship_item_to_data(item: RelationshipInformationItem) -> dict[str, Any]:
+    return {
+        "item_id": item.item_id,
+        "counterpart_id": item.counterpart_id,
+        "kind": item.kind.value,
+        "content": item.content,
+        "version": item.version,
+        "status": item.status.value,
+        "source_references": list(item.source_references),
+        "provenance": item.provenance,
+        "certainty": item.certainty.value,
+        "confirmation_reference": item.confirmation_reference,
+        "confirmed_at": _external(item.confirmed_at),
+        "valid_from": _external(item.valid_from),
+        "valid_until": None if item.valid_until is None else _external(item.valid_until),
+        "reconfirmation_condition": item.reconfirmation_condition,
+        "scope_keywords": list(item.scope_keywords),
+    }
+
+
+def _read_relationship_item(data: dict[str, Any]) -> RelationshipInformationItem:
+    valid_until = data["valid_until"]
+    return RelationshipInformationItem(
+        item_id=str(data["item_id"]),
+        counterpart_id=str(data["counterpart_id"]),
+        kind=RelationshipInformationKind(data["kind"]),
+        content=str(data["content"]),
+        version=int(data["version"]),
+        status=RelationshipInformationStatus(data["status"]),
+        source_references=tuple(str(value) for value in data["source_references"]),
+        provenance=str(data["provenance"]),
+        certainty=InformationCertainty(data["certainty"]),
+        confirmation_reference=str(data["confirmation_reference"]),
+        confirmed_at=_read_external(data["confirmed_at"]),
+        valid_from=_read_external(data["valid_from"]),
+        valid_until=None if valid_until is None else _read_external(valid_until),
+        reconfirmation_condition=str(data["reconfirmation_condition"]),
+        scope_keywords=tuple(str(value) for value in data["scope_keywords"]),
+    )
+
+
+def _relationship_request_to_data(request: RelationshipChangeRequest) -> dict[str, Any]:
+    return {
+        "request_id": request.request_id,
+        "lifecycle_id": request.lifecycle_id,
+        "counterpart_id": request.counterpart_id,
+        "operation": request.operation.value,
+        "source_reference": request.source_reference,
+        "reason": request.reason,
+        "requested_at": _external(request.requested_at),
+        "kind": None if request.kind is None else request.kind.value,
+        "content": request.content,
+        "target_item_id": request.target_item_id,
+        "expected_version": request.expected_version,
+        "pending_id": request.pending_id,
+        "scope_keywords": list(request.scope_keywords),
+        "valid_until": (
+            None if request.valid_until is None else _external(request.valid_until)
+        ),
+        "reconfirmation_condition": request.reconfirmation_condition,
+    }
+
+
+def _read_relationship_request(data: dict[str, Any]) -> RelationshipChangeRequest:
+    valid_until = data["valid_until"]
+    kind = data["kind"]
+    return RelationshipChangeRequest(
+        request_id=str(data["request_id"]),
+        lifecycle_id=str(data["lifecycle_id"]),
+        counterpart_id=str(data["counterpart_id"]),
+        operation=RelationshipOperation(data["operation"]),
+        source_reference=str(data["source_reference"]),
+        reason=str(data["reason"]),
+        requested_at=_read_external(data["requested_at"]),
+        kind=None if kind is None else RelationshipInformationKind(kind),
+        content=None if data["content"] is None else str(data["content"]),
+        target_item_id=(
+            None if data["target_item_id"] is None else str(data["target_item_id"])
+        ),
+        expected_version=(
+            None if data["expected_version"] is None else int(data["expected_version"])
+        ),
+        pending_id=None if data["pending_id"] is None else str(data["pending_id"]),
+        scope_keywords=tuple(str(value) for value in data["scope_keywords"]),
+        valid_until=None if valid_until is None else _read_external(valid_until),
+        reconfirmation_condition=str(data["reconfirmation_condition"]),
+    )
+
+
+def _relationship_pending_to_data(pending: RelationshipPendingConfirmation) -> dict[str, Any]:
+    return {
+        "pending_id": pending.pending_id,
+        "request": _relationship_request_to_data(pending.request),
+        "expires_at": _external(pending.expires_at),
+    }
+
+
+def _read_relationship_pending(data: dict[str, Any]) -> RelationshipPendingConfirmation:
+    return RelationshipPendingConfirmation(
+        pending_id=str(data["pending_id"]),
+        request=_read_relationship_request(data["request"]),
+        expires_at=_read_external(data["expires_at"]),
+    )
+
+
+def _relationship_change_to_data(record: RelationshipChangeRecord) -> dict[str, Any]:
+    return {
+        "record_id": record.record_id,
+        "request_id": record.request_id,
+        "lifecycle_id": record.lifecycle_id,
+        "counterpart_id": record.counterpart_id,
+        "operation": record.operation.value,
+        "status": record.status.value,
+        "source_reference": record.source_reference,
+        "before": None if record.before is None else _relationship_item_to_data(record.before),
+        "after": None if record.after is None else _relationship_item_to_data(record.after),
+        "pending_id": record.pending_id,
+        "reason": record.reason,
+        "impact_scope": list(record.impact_scope),
+        "occurred_at": _external(record.occurred_at),
+    }
+
+
+def _read_relationship_change(data: dict[str, Any]) -> RelationshipChangeRecord:
+    return RelationshipChangeRecord(
+        record_id=str(data["record_id"]),
+        request_id=str(data["request_id"]),
+        lifecycle_id=str(data["lifecycle_id"]),
+        counterpart_id=str(data["counterpart_id"]),
+        operation=RelationshipOperation(data["operation"]),
+        status=RelationshipChangeStatus(data["status"]),
+        source_reference=str(data["source_reference"]),
+        before=None if data["before"] is None else _read_relationship_item(data["before"]),
+        after=None if data["after"] is None else _read_relationship_item(data["after"]),
+        pending_id=None if data["pending_id"] is None else str(data["pending_id"]),
+        reason=str(data["reason"]),
+        impact_scope=tuple(str(value) for value in data["impact_scope"]),
+        occurred_at=_read_external(data["occurred_at"]),
+    )
+
+
+def _relationship_usage_to_data(usage: RelationshipInformationUsage) -> dict[str, Any]:
+    return {
+        "lifecycle_id": usage.lifecycle_id,
+        "source_reference": usage.source_reference,
+        "counterpart_id": usage.counterpart_id,
+        "item_versions": [list(value) for value in usage.item_versions],
+        "occurred_at": _external(usage.occurred_at),
+    }
+
+
+def _read_relationship_usage(data: dict[str, Any]) -> RelationshipInformationUsage:
+    return RelationshipInformationUsage(
+        lifecycle_id=str(data["lifecycle_id"]),
+        source_reference=str(data["source_reference"]),
+        counterpart_id=str(data["counterpart_id"]),
+        item_versions=tuple((str(value[0]), int(value[1])) for value in data["item_versions"]),
+        occurred_at=_read_external(data["occurred_at"]),
+    )
+
+
 def _snapshot_to_data(snapshot: PersistenceSnapshot) -> dict[str, Any]:
     state = snapshot.state
     memory = snapshot.memory
@@ -656,6 +828,22 @@ def _snapshot_to_data(snapshot: PersistenceSnapshot) -> dict[str, Any]:
             "retired_dialogue_context_ids": list(
                 snapshot.relationship.retired_dialogue_context_ids
             ),
+            "relationship_items": [
+                _relationship_item_to_data(item)
+                for item in snapshot.relationship.relationship_items
+            ],
+            "relationship_pending_confirmations": [
+                _relationship_pending_to_data(pending)
+                for pending in snapshot.relationship.relationship_pending_confirmations
+            ],
+            "relationship_changes": [
+                _relationship_change_to_data(record)
+                for record in snapshot.relationship.relationship_changes
+            ],
+            "relationship_usages": [
+                _relationship_usage_to_data(usage)
+                for usage in snapshot.relationship.relationship_usages
+            ],
         },
         "protection": {
             "normal_dialogue_output_enabled": (
@@ -745,6 +933,22 @@ def _snapshot_from_data(data: dict[str, Any]) -> PersistenceSnapshot:
             retired_dialogue_context_ids=tuple(
                 str(value)
                 for value in relationship.get("retired_dialogue_context_ids", ())
+            ),
+            relationship_items=tuple(
+                _read_relationship_item(item)
+                for item in relationship.get("relationship_items", ())
+            ),
+            relationship_pending_confirmations=tuple(
+                _read_relationship_pending(pending)
+                for pending in relationship.get("relationship_pending_confirmations", ())
+            ),
+            relationship_changes=tuple(
+                _read_relationship_change(record)
+                for record in relationship.get("relationship_changes", ())
+            ),
+            relationship_usages=tuple(
+                _read_relationship_usage(usage)
+                for usage in relationship.get("relationship_usages", ())
             ),
         ),
         protection=ProtectionPersistenceSnapshot(
