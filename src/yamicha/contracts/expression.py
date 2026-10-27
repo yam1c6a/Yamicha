@@ -44,6 +44,7 @@ class ExpressionMeaning(StrEnum):
     EXTERNAL_EFFECT_NOT_EXECUTED = "external_effect_not_executed"
     TARGET_AUTHORITY_EFFECT_UNKNOWN = "target_authority_effect_unknown"
     CONFIRM_TARGET_AUTHORITY_EFFECT = "confirm_target_authority_effect"
+    CONFIRM_DIALOGUE_INTENT = "confirm_dialogue_intent"
     MATERIAL_INSUFFICIENT = "material_insufficient"
     DECISION_HELD = "decision_held"
     BOUNDARY_VIOLATION = "boundary_violation"
@@ -58,6 +59,7 @@ _MEANING_KINDS = {
     ExpressionMeaning.CONFIRM_TARGET_AUTHORITY_EFFECT: (
         StatementKind.CONFIRMATION_REQUEST
     ),
+    ExpressionMeaning.CONFIRM_DIALOGUE_INTENT: StatementKind.CONFIRMATION_REQUEST,
     ExpressionMeaning.MATERIAL_INSUFFICIENT: StatementKind.UNKNOWN,
     ExpressionMeaning.DECISION_HELD: StatementKind.HOLD,
     ExpressionMeaning.BOUNDARY_VIOLATION: StatementKind.FACT,

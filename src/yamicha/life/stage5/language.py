@@ -34,6 +34,9 @@ class Stage5Language:
         ExpressionMeaning.CONFIRM_TARGET_AUTHORITY_EFFECT: (
             "対象、権限、意図する効果を確認してください。"
         ),
+        ExpressionMeaning.CONFIRM_DIALOGUE_INTENT: (
+            "回答の前に、確認したい対象や知りたい点を教えてください。"
+        ),
         ExpressionMeaning.MATERIAL_INSUFFICIENT: (
             "判断に必要な情報が不足しています。"
         ),

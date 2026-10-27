@@ -19,6 +19,13 @@ from .conversation_memory import (
     ConversationMemoryWindow,
 )
 from .dialogue import DialogueContextWindow
+from .experience import (
+    ExperienceChangeRecord,
+    ExperienceChangeRequest,
+    ExperiencePendingConfirmation,
+    ExperienceValue,
+    ExperienceWindow,
+)
 from .relationship import (
     RelationshipChangeRecord,
     RelationshipChangeRequest,
@@ -86,6 +93,8 @@ class AuxiliaryIntelligenceProposal:
     dialogue_context: DialogueContextWindow | None = None
     conversation_memory: ConversationMemoryWindow | None = None
     relationship_information: RelationshipInformationWindow | None = None
+    experience_information: ExperienceWindow | None = None
+    experience_confirmation_reference: str | None = None
 
     def __post_init__(self) -> None:
         required = (
@@ -130,6 +139,22 @@ class AuxiliaryIntelligenceProposal:
             ):
                 raise ValueError("relationship information is outside allowed scope")
             input_characters += window.total_characters
+        if self.experience_information is not None:
+            window = self.experience_information
+            if window.current_input_reference != self.input_source_reference:
+                raise ValueError("experience information does not match current input")
+            if self.dialogue_context is None or window.context_id != self.dialogue_context.context_id:
+                raise ValueError("experience information requires its dialogue context")
+            if window.selections and "selected_confirmed_experience" not in self.constraints.allowed_input_scope:
+                raise ValueError("experience information is outside allowed scope")
+            input_characters += window.total_characters
+        if self.experience_confirmation_reference is not None and (
+            not self.experience_confirmation_reference.strip()
+            or self.experience_information is None
+            or not any(selection.item.value is ExperienceValue.ASK_FIRST
+                       for selection in self.experience_information.selections)
+        ):
+            raise ValueError("experience confirmation must refer to a selected clarification policy")
         if input_characters > self.constraints.max_input_characters:
             raise ValueError("intelligence proposal exceeds its input limit")
 
@@ -436,3 +461,20 @@ class Stage15InputOutcome(Stage14InputOutcome):
             assert record is not None
             if request.request_id != record.request_id:
                 raise ValueError("relationship record does not match its request")
+
+
+@dataclass(frozen=True, slots=True)
+class Stage16InputOutcome(Stage15InputOutcome):
+    experience_information: ExperienceWindow | None = None
+    experience_change_request: ExperienceChangeRequest | None = None
+    experience_change_record: ExperienceChangeRecord | None = None
+    experience_pending_confirmation: ExperiencePendingConfirmation | None = None
+
+    def __post_init__(self) -> None:
+        Stage15InputOutcome.__post_init__(self)
+        if (self.experience_change_request is None) != (self.experience_change_record is None):
+            raise ValueError("experience request and record must appear together")
+        if self.experience_change_request is not None:
+            assert self.experience_change_record is not None
+            if self.experience_change_request.request_id != self.experience_change_record.request_id:
+                raise ValueError("experience record does not match its request")

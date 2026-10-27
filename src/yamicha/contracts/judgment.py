@@ -7,6 +7,7 @@ from enum import StrEnum
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    from .experience import ExperienceWindow
     from .relationship import RelationshipInformationWindow
 
 from .input import ContentTrust, InputDisposition, InputRejection, SensoryEvent
@@ -32,12 +33,20 @@ class MemoryDecisionMaterial:
     confirmed_experience_references: tuple[str, ...] = ()
     conversation_memory_references: tuple[str, ...] = ()
     uncertainties: tuple[str, ...] = ()
+    experience_information: ExperienceWindow | None = None
+    experience_confirmation_reference: str | None = None
 
     def __post_init__(self) -> None:
         if len(set(self.conversation_memory_references)) != len(
             self.conversation_memory_references
         ):
             raise ValueError("conversation-memory material references must be unique")
+        if self.experience_confirmation_reference is not None and (
+            not self.experience_confirmation_reference.strip()
+            or self.experience_information is None
+            or not self.experience_information.selections
+        ):
+            raise ValueError("experience confirmation requires selected experience and an output reference")
 
 
 @dataclass(frozen=True, slots=True)

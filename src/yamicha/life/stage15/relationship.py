@@ -279,6 +279,7 @@ class Stage15Relationship(Stage14Relationship):
         max_exchanges: int,
         max_characters: int,
         relationship_information: RelationshipInformationWindow | None = None,
+        excluded_lifecycle_ids: tuple[str, ...] = (),
     ) -> DialogueContextWindow:
         context = self.ensure_active_context(event)
         current_characters = len(event.meaning.normalized_text)
@@ -295,6 +296,7 @@ class Stage15Relationship(Stage14Relationship):
             for selection in relationship_window.selections
         }
         excluded = {record.lifecycle_id for record in self._relationship_changes}
+        excluded.update(excluded_lifecycle_ids)
         excluded.update(
             turn.lifecycle_id for turn in context.turns
             if turn.speaker is DialogueSpeaker.HUMAN

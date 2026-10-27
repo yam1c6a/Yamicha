@@ -178,6 +178,12 @@ from .capability import (
     ReadOnlyToolResult,
     Stage9CapabilityOutcome,
 )
+from .experience import (
+    ExperienceChangeRecord, ExperienceChangeRequest, ExperienceChangeStatus,
+    ExperienceEvidence, ExperienceEvidenceKind, ExperienceItem, ExperienceOperation,
+    ExperiencePendingConfirmation, ExperienceReaction, ExperienceSelection,
+    ExperienceTarget, ExperienceUsage, ExperienceValue, ExperienceWindow,
+)
 from .intelligence import (
     AuxiliaryIntelligenceProposal,
     AuxiliaryIntelligenceResult,
@@ -195,9 +201,14 @@ from .intelligence import (
     Stage13InputOutcome,
     Stage14InputOutcome,
     Stage15InputOutcome,
+    Stage16InputOutcome,
 )
 
 __all__ = [
+    "ExperienceChangeRecord", "ExperienceChangeRequest", "ExperienceChangeStatus",
+    "ExperienceEvidence", "ExperienceEvidenceKind", "ExperienceItem", "ExperienceOperation",
+    "ExperiencePendingConfirmation", "ExperienceReaction", "ExperienceSelection",
+    "ExperienceTarget", "ExperienceUsage", "ExperienceValue", "ExperienceWindow",
     "Authority",
     "AuxiliaryIntelligenceProposal",
     "AuxiliaryIntelligenceResult",
@@ -357,6 +368,7 @@ __all__ = [
     "Stage13InputOutcome",
     "Stage14InputOutcome",
     "Stage15InputOutcome",
+    "Stage16InputOutcome",
     "StatementKind",
     "StateSnapshot",
     "StatePersistenceSnapshot",

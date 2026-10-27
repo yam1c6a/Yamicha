@@ -17,6 +17,7 @@ from yamicha.body.persistence import PersistenceConsistencyError  # noqa: E402
 from yamicha.bootstrap import (  # noqa: E402
     make_stage13_system,
     make_stage15_system,
+    make_stage16_system,
     run_interactive_console,
 )
 from yamicha.contracts import (  # noqa: E402
@@ -135,9 +136,9 @@ class Stage15UpgradeCompatibilityTest(unittest.TestCase):
         )
 
         self.assertEqual(exit_code, 0)
-        self.assertIn("Yamicha 対話コンソール（段階15）", output.getvalue())
+        self.assertIn("Yamicha 対話コンソール（段階16）", output.getvalue())
         self.assertIn("コーヒーが好き", output.getvalue())
-        restored = self.make_system(require_existing_persistence=True)
+        restored = self.make_system(make_stage16_system, require_existing_persistence=True)
         self.assertEqual(restored.recovery.identity.subject_id, identity)
         self.assertEqual(restored.memory.conversation_memory_items, memories)
         self.assertEqual(restored.relationship.active_dialogue_context, context)

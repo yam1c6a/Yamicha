@@ -18,6 +18,7 @@ from yamicha.contracts import (
 )
 from yamicha.life.stage9 import Stage9Judgment
 from yamicha.contracts.relationship import RelationshipInformationWindow
+from yamicha.contracts.experience import ExperienceWindow
 
 
 class Stage10Judgment(Stage9Judgment):
@@ -50,6 +51,8 @@ class Stage10Judgment(Stage9Judgment):
         dialogue_context: DialogueContextWindow | None = None,
         conversation_memory: ConversationMemoryWindow | None = None,
         relationship_information: RelationshipInformationWindow | None = None,
+        experience_information: ExperienceWindow | None = None,
+        experience_confirmation_reference: str | None = None,
     ) -> AuxiliaryIntelligenceProposal:
         proposal = AuxiliaryIntelligenceProposal(
             proposal_id=self._required_id(
@@ -66,6 +69,8 @@ class Stage10Judgment(Stage9Judgment):
             dialogue_context=dialogue_context,
             conversation_memory=conversation_memory,
             relationship_information=relationship_information,
+            experience_information=experience_information,
+            experience_confirmation_reference=experience_confirmation_reference,
         )
         self._intelligence_proposals[proposal.proposal_id] = proposal
         return proposal

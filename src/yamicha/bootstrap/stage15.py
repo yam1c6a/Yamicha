@@ -163,20 +163,26 @@ class Stage15System(Stage14System):
         )
 
 
-def make_stage15_system(**stage14_options: object) -> Stage15System:
+def make_stage15_system(
+    *,
+    _configuration_version: str = CONFIGURATION_VERSION,
+    _upgrade_from_configuration_versions: tuple[str, ...] = ("stage13-v1", "stage14-v1"),
+    _core_factory: type[Stage15Core] = Stage15Core,
+    _judgment_factory: type[Stage15Judgment] = Stage15Judgment,
+    _intelligence_allowed_input_scope: tuple[str, ...] = (
+        "current_verified_text", "verified_recent_dialogue_turns",
+        "selected_adopted_conversation_memories", "selected_confirmed_relationship_information",
+        "verified_speaker_and_model_identity",
+    ),
+    **stage14_options: object,
+) -> Stage15System:
     base = make_stage14_system(
-        _configuration_version=CONFIGURATION_VERSION,
-        _upgrade_from_configuration_versions=("stage13-v1", "stage14-v1"),
-        _core_factory=Stage15Core,
-        _judgment_factory=Stage15Judgment,
+        _configuration_version=_configuration_version,
+        _upgrade_from_configuration_versions=_upgrade_from_configuration_versions,
+        _core_factory=_core_factory,
+        _judgment_factory=_judgment_factory,
         _relationship_factory=Stage15Relationship,
-        _intelligence_allowed_input_scope=(
-            "current_verified_text",
-            "verified_recent_dialogue_turns",
-            "selected_adopted_conversation_memories",
-            "selected_confirmed_relationship_information",
-            "verified_speaker_and_model_identity",
-        ),
+        _intelligence_allowed_input_scope=_intelligence_allowed_input_scope,
         **stage14_options,
     )
     base.core.bind_relationship_validator(base.judgment.issued_relationship_request)

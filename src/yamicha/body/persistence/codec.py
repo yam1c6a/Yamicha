@@ -53,6 +53,21 @@ from yamicha.contracts.relationship import (
     RelationshipOperation,
     RelationshipPendingConfirmation,
 )
+from yamicha.contracts.capability import CapabilityOperation, CapabilityResultStatus
+from yamicha.contracts.experience import (
+    ExperienceChangeRecord,
+    ExperienceChangeRequest,
+    ExperienceChangeStatus,
+    ExperienceEvidence,
+    ExperienceEvidenceKind,
+    ExperienceItem,
+    ExperienceOperation,
+    ExperiencePendingConfirmation,
+    ExperienceReaction,
+    ExperienceTarget,
+    ExperienceUsage,
+    ExperienceValue,
+)
 
 
 def encode_snapshot(snapshot: PersistenceSnapshot) -> str:
@@ -760,6 +775,203 @@ def _read_relationship_usage(data: dict[str, Any]) -> RelationshipInformationUsa
     )
 
 
+def _experience_evidence_to_data(evidence: ExperienceEvidence) -> dict[str, Any]:
+    return {
+        "evidence_id": evidence.evidence_id,
+        "kind": evidence.kind.value,
+        "counterpart_id": evidence.counterpart_id,
+        "context_id": evidence.context_id,
+        "lifecycle_id": evidence.lifecycle_id,
+        "source_reference": evidence.source_reference,
+        "observed_at": _external(evidence.observed_at),
+        "output_digest": evidence.output_digest,
+        "capability_status": None if evidence.capability_status is None else evidence.capability_status.value,
+        "capability_operation": None if evidence.capability_operation is None else evidence.capability_operation.value,
+        "capability_target": evidence.capability_target,
+    }
+
+
+def _read_experience_evidence(data: dict[str, Any]) -> ExperienceEvidence:
+    status, operation = data.get("capability_status"), data.get("capability_operation")
+    return ExperienceEvidence(
+        evidence_id=str(data["evidence_id"]),
+        kind=ExperienceEvidenceKind(data["kind"]),
+        counterpart_id=str(data["counterpart_id"]),
+        context_id=str(data["context_id"]),
+        lifecycle_id=str(data["lifecycle_id"]),
+        source_reference=str(data["source_reference"]),
+        observed_at=_read_external(data["observed_at"]),
+        output_digest=None if data.get("output_digest") is None else str(data["output_digest"]),
+        capability_status=None if status is None else CapabilityResultStatus(status),
+        capability_operation=None if operation is None else CapabilityOperation(operation),
+        capability_target=None if data.get("capability_target") is None else str(data["capability_target"]),
+    )
+
+
+def _experience_item_to_data(item: ExperienceItem) -> dict[str, Any]:
+    return {
+        "item_id": item.item_id,
+        "version": item.version,
+        "counterpart_id": item.counterpart_id,
+        "context_id": item.context_id,
+        "target": item.target.value,
+        "value": item.value.value,
+        "active": item.active,
+        "evidence_id": item.evidence_id,
+        "feedback_source_reference": item.feedback_source_reference,
+        "confirmation_reference": item.confirmation_reference,
+        "confirmed_at": _external(item.confirmed_at),
+        "reason": item.reason,
+        "scope_keywords": list(item.scope_keywords),
+        "decision_kind": item.decision_kind,
+        "capability_operation": None if item.capability_operation is None else item.capability_operation.value,
+        "capability_target": item.capability_target,
+        "reevaluation_condition": item.reevaluation_condition,
+    }
+
+
+def _read_experience_item(data: dict[str, Any]) -> ExperienceItem:
+    if not isinstance(data["active"], bool):
+        raise ValueError("experience active state must be a boolean")
+    operation = data.get("capability_operation")
+    return ExperienceItem(
+        item_id=str(data["item_id"]),
+        version=int(data["version"]),
+        counterpart_id=str(data["counterpart_id"]),
+        context_id=str(data["context_id"]),
+        target=ExperienceTarget(data["target"]),
+        value=ExperienceValue(data["value"]),
+        active=bool(data["active"]),
+        evidence_id=str(data["evidence_id"]),
+        feedback_source_reference=str(data["feedback_source_reference"]),
+        confirmation_reference=str(data["confirmation_reference"]),
+        confirmed_at=_read_external(data["confirmed_at"]),
+        reason=str(data["reason"]),
+        scope_keywords=tuple(str(value) for value in data.get("scope_keywords", ())),
+        decision_kind=str(data.get("decision_kind", "dialogue")),
+        capability_operation=None if operation is None else CapabilityOperation(operation),
+        capability_target=None if data.get("capability_target") is None else str(data["capability_target"]),
+        reevaluation_condition=str(data.get("reevaluation_condition", "新しい公開応答への明示反応、訂正、または不採用の申告時に別入力で確認する")),
+    )
+
+
+def _experience_request_to_data(request: ExperienceChangeRequest) -> dict[str, Any]:
+    return {
+        "request_id": request.request_id,
+        "lifecycle_id": request.lifecycle_id,
+        "counterpart_id": request.counterpart_id,
+        "context_id": request.context_id,
+        "operation": request.operation.value,
+        "source_reference": request.source_reference,
+        "reason": request.reason,
+        "requested_at": _external(request.requested_at),
+        "reaction": None if request.reaction is None else request.reaction.value,
+        "evidence_id": request.evidence_id,
+        "target_item_id": request.target_item_id,
+        "expected_version": request.expected_version,
+        "pending_id": request.pending_id,
+        "scope_keywords": list(request.scope_keywords),
+    }
+
+
+def _read_experience_request(data: dict[str, Any]) -> ExperienceChangeRequest:
+    reaction = data.get("reaction")
+    return ExperienceChangeRequest(
+        request_id=str(data["request_id"]),
+        lifecycle_id=str(data["lifecycle_id"]),
+        counterpart_id=str(data["counterpart_id"]),
+        context_id=str(data["context_id"]),
+        operation=ExperienceOperation(data["operation"]),
+        source_reference=str(data["source_reference"]),
+        reason=str(data["reason"]),
+        requested_at=_read_external(data["requested_at"]),
+        reaction=None if reaction is None else ExperienceReaction(reaction),
+        evidence_id=None if data.get("evidence_id") is None else str(data["evidence_id"]),
+        target_item_id=None if data.get("target_item_id") is None else str(data["target_item_id"]),
+        expected_version=None if data.get("expected_version") is None else int(data["expected_version"]),
+        pending_id=None if data.get("pending_id") is None else str(data["pending_id"]),
+        scope_keywords=tuple(str(value) for value in data.get("scope_keywords", ())),
+    )
+
+
+def _experience_pending_to_data(pending: ExperiencePendingConfirmation) -> dict[str, Any]:
+    return {
+        "pending_id": pending.pending_id,
+        "request": _experience_request_to_data(pending.request),
+        "expires_at": _external(pending.expires_at),
+    }
+
+
+def _read_experience_pending(data: dict[str, Any]) -> ExperiencePendingConfirmation:
+    return ExperiencePendingConfirmation(
+        pending_id=str(data["pending_id"]),
+        request=_read_experience_request(data["request"]),
+        expires_at=_read_external(data["expires_at"]),
+    )
+
+
+def _experience_change_to_data(record: ExperienceChangeRecord) -> dict[str, Any]:
+    return {
+        "record_id": record.record_id,
+        "request_id": record.request_id,
+        "lifecycle_id": record.lifecycle_id,
+        "counterpart_id": record.counterpart_id,
+        "operation": record.operation.value,
+        "status": record.status.value,
+        "source_reference": record.source_reference,
+        "evidence_id": record.evidence_id,
+        "before": None if record.before is None else _experience_item_to_data(record.before),
+        "after": None if record.after is None else _experience_item_to_data(record.after),
+        "pending_id": record.pending_id,
+        "reason": record.reason,
+        "impact_scope": list(record.impact_scope),
+        "occurred_at": _external(record.occurred_at),
+        "proposal": None if record.proposal is None else _experience_request_to_data(record.proposal),
+    }
+
+
+def _read_experience_change(data: dict[str, Any]) -> ExperienceChangeRecord:
+    return ExperienceChangeRecord(
+        record_id=str(data["record_id"]),
+        request_id=str(data["request_id"]),
+        lifecycle_id=str(data["lifecycle_id"]),
+        counterpart_id=str(data["counterpart_id"]),
+        operation=ExperienceOperation(data["operation"]),
+        status=ExperienceChangeStatus(data["status"]),
+        source_reference=str(data["source_reference"]),
+        evidence_id=None if data.get("evidence_id") is None else str(data["evidence_id"]),
+        before=None if data.get("before") is None else _read_experience_item(data["before"]),
+        after=None if data.get("after") is None else _read_experience_item(data["after"]),
+        pending_id=None if data.get("pending_id") is None else str(data["pending_id"]),
+        reason=str(data["reason"]),
+        impact_scope=tuple(str(value) for value in data["impact_scope"]),
+        occurred_at=_read_external(data["occurred_at"]),
+        proposal=None if data.get("proposal") is None else _read_experience_request(data["proposal"]),
+    )
+
+
+def _experience_usage_to_data(usage: ExperienceUsage) -> dict[str, Any]:
+    return {
+        "lifecycle_id": usage.lifecycle_id,
+        "source_reference": usage.source_reference,
+        "counterpart_id": usage.counterpart_id,
+        "context_id": usage.context_id,
+        "item_versions": [list(value) for value in usage.item_versions],
+        "occurred_at": _external(usage.occurred_at),
+    }
+
+
+def _read_experience_usage(data: dict[str, Any]) -> ExperienceUsage:
+    return ExperienceUsage(
+        lifecycle_id=str(data["lifecycle_id"]),
+        source_reference=str(data["source_reference"]),
+        counterpart_id=str(data["counterpart_id"]),
+        context_id=str(data["context_id"]),
+        item_versions=tuple((str(value[0]), int(value[1])) for value in data["item_versions"]),
+        occurred_at=_read_external(data["occurred_at"]),
+    )
+
+
 def _snapshot_to_data(snapshot: PersistenceSnapshot) -> dict[str, Any]:
     state = snapshot.state
     memory = snapshot.memory
@@ -813,6 +1025,21 @@ def _snapshot_to_data(snapshot: PersistenceSnapshot) -> dict[str, Any]:
             "conversation_pending_confirmations": [
                 _pending_confirmation_to_data(confirmation)
                 for confirmation in memory.conversation_pending_confirmations
+            ],
+            "experience_evidence": [
+                _experience_evidence_to_data(evidence) for evidence in memory.experience_evidence
+            ],
+            "experience_items": [
+                _experience_item_to_data(item) for item in memory.experience_items
+            ],
+            "experience_changes": [
+                _experience_change_to_data(record) for record in memory.experience_changes
+            ],
+            "experience_pending_confirmations": [
+                _experience_pending_to_data(pending) for pending in memory.experience_pending_confirmations
+            ],
+            "experience_usages": [
+                _experience_usage_to_data(usage) for usage in memory.experience_usages
             ],
         },
         "relationship": {
@@ -920,6 +1147,26 @@ def _snapshot_from_data(data: dict[str, Any]) -> PersistenceSnapshot:
                 for confirmation in memory.get(
                     "conversation_pending_confirmations", ()
                 )
+            ),
+            experience_evidence=tuple(
+                _read_experience_evidence(evidence)
+                for evidence in memory.get("experience_evidence", ())
+            ),
+            experience_items=tuple(
+                _read_experience_item(item)
+                for item in memory.get("experience_items", ())
+            ),
+            experience_changes=tuple(
+                _read_experience_change(record)
+                for record in memory.get("experience_changes", ())
+            ),
+            experience_pending_confirmations=tuple(
+                _read_experience_pending(pending)
+                for pending in memory.get("experience_pending_confirmations", ())
+            ),
+            experience_usages=tuple(
+                _read_experience_usage(usage)
+                for usage in memory.get("experience_usages", ())
             ),
         ),
         relationship=RelationshipPersistenceSnapshot(

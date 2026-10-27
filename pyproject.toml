@@ -1,6 +1,6 @@
 [project]
 name = "yamicha"
-version = "0.5.0"
+version = "0.6.0"
 description = "Confirmed relationship continuity and governed conversation memory for Yamicha"
 readme = "README.md"
 requires-python = ">=3.11"

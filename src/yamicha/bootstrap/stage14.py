@@ -339,13 +339,14 @@ def make_stage14_system(
     _core_factory: type[Stage14Core] = Stage14Core,
     _judgment_factory: type[Stage14Judgment] = Stage14Judgment,
     _relationship_factory: type[Stage14Relationship] = Stage14Relationship,
+    _memory_factory: type[Stage14Memory] = Stage14Memory,
     **stage13_options: object,
 ) -> Stage14System:
     policy = retention_policy or Stage14RetentionPolicy()
     base = make_stage13_system(
         _configuration_version=_configuration_version,
         _upgrade_from_configuration_versions=_upgrade_from_configuration_versions,
-        _memory_factory=Stage14Memory,
+        _memory_factory=_memory_factory,
         _memory_options={
             "conversation_governance_record_id_factory": (
                 conversation_memory_governance_record_id_factory

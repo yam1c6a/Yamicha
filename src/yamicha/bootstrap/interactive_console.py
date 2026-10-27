@@ -29,7 +29,9 @@ from .stage10 import Stage10System
 from .stage12 import Stage12System
 from .stage13 import Stage13System
 from .stage14 import Stage14System
-from .stage15 import Stage15System, make_stage15_system
+from .stage15 import Stage15System
+from .stage16 import Stage16System, make_stage16_system
+from yamicha.contracts.experience import REACTION_EFFECTS, ExperienceChangeStatus
 
 
 class InteractiveConsole:
@@ -86,6 +88,11 @@ class InteractiveConsole:
                 "関係情報は /relationship、登録は「関係：希望：内容」、"
                 "確認は「関係確認」で行えます。\n"
             )
+        if isinstance(self._system, Stage16System):
+            self._output.write(
+                "経験は /experience、反応は「経験：直前：長すぎた」、"
+                "別入力の「経験確認」で反映します。\n"
+            )
         try:
             while True:
                 self._output.write("you> ")
@@ -121,6 +128,9 @@ class InteractiveConsole:
                         include_inactive=text.strip().endswith(" all")
                     )
                     continue
+                if text.strip() in {"/experience", "/experience all"} and isinstance(self._system, Stage16System):
+                    self._show_experiences(include_inactive=text.strip().endswith(" all"))
+                    continue
                 raw = self._channel.make_text_input(
                     input_id=self._required_input_id(),
                     received_at=self._external_time_factory(),
@@ -136,6 +146,8 @@ class InteractiveConsole:
                     self._show_governance_result(outcome)
                 if isinstance(self._system, Stage15System):
                     self._show_relationship_result(outcome)
+                if isinstance(self._system, Stage16System):
+                    self._show_experience_result(outcome)
                 self._output.flush()
         finally:
             self._stop_started_system()
@@ -290,6 +302,62 @@ class InteractiveConsole:
         else:
             self._output.write(f"関係情報の変更は反映されませんでした: {record.reason}\n")
 
+    @staticmethod
+    def _experience_value(value) -> str:
+        return {"brief": "短く説明する（上限160文字）", "detailed": "詳しく説明する",
+                "ask_first": "先に対象や意図を確認する", "respond_normally": "通常の判断に従って応答する"}[value.value]
+
+    def _show_experiences(self, *, include_inactive: bool) -> None:
+        if not self._information_display_allowed():
+            return
+        items = self._system.list_experiences(self._source_id, include_inactive=include_inactive)
+        if not items:
+            self._output.write("有効な経験はありません。\n")
+        for item in items:
+            state = "有効" if item.active else "不採用"
+            scope = "、".join(item.scope_keywords) or "元の会話内"
+            if item.capability_target is not None:
+                scope += f" / 能力対象: {item.capability_target}"
+            self._output.write(
+                f"[{item.item_id} v{item.version}/{state}] {self._experience_value(item.value)}\n"
+                f"適用範囲: 同じ相手 / {scope} / 対話判断\n"
+                f"根拠: {item.evidence_id} / 理由: {item.reason}\n"
+                f"再評価条件: {item.reevaluation_condition}\n"
+            )
+        pending = self._system.memory.pending_experience_confirmation_for(self._source_id)
+        if pending is not None:
+            self._output.write("経験の確認待ちがあります。「経験確認」または「経験取消」と入力してください。\n")
+        self._output.write("再評価は「経験見直し：ID：説明が足りなかった」、不採用は「経験不採用：ID」です。\n")
+        self._output.flush()
+
+    def _show_experience_result(self, outcome) -> None:
+        record = getattr(outcome, "experience_change_record", None)
+        if record is None or not self._information_display_allowed():
+            return
+        if record.status is ExperienceChangeStatus.CONFIRMATION_REQUIRED:
+            pending = outcome.experience_pending_confirmation
+            assert pending is not None
+            proposed = pending.request
+            after = "不採用"
+            if proposed.reaction in REACTION_EFFECTS:
+                after = self._experience_value(REACTION_EFFECTS[proposed.reaction][1])
+            before = "通常の判断・表現" if record.before is None else self._experience_value(record.before.value)
+            scope = "、".join(proposed.scope_keywords) or "元の会話内"
+            evidence = next((item for item in self._system.memory.experience_evidence
+                             if item.evidence_id == proposed.evidence_id), None)
+            if evidence is not None and evidence.capability_target is not None:
+                scope += f" / 能力対象: {evidence.capability_target} / 観測結果: {evidence.capability_status.value}"
+            self._output.write(
+                f"経験の確認待ち: {before} → {after}\n"
+                f"理由: {proposed.reason} / 根拠: {proposed.evidence_id}\n"
+                f"適用範囲: 同じ相手 / {scope} / 対話判断\n"
+                "新しい反応や訂正時に再評価します。反映は「経験確認」、取消は「経験取消」です。\n"
+            )
+        else:
+            self._output.write(f"経験の処理結果: {record.reason}\n")
+            if record.after is not None:
+                self._output.write(f"経験ID: {record.after.item_id} / v{record.after.version}\n")
+
     def _stop_started_system(self) -> None:
         if isinstance(self._system, (Stage7System, Stage8System)):
             self._system.shutdown()
@@ -308,7 +376,7 @@ def run_interactive_console(
     persistence_path: str | Path = Path(".yamicha/yamicha.sqlite3"),
 ) -> int:
     source_id = "local-console"
-    system = make_stage15_system(
+    system = make_stage16_system(
         persistence_path=persistence_path,
         known_counterpart_id=source_id,
         capability_authority_id=source_id,

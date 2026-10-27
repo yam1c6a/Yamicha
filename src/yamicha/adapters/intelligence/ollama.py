@@ -15,6 +15,7 @@ from yamicha.contracts import (
     IntelligencePurpose,
     IntelligenceResultStatus,
 )
+from yamicha.contracts.experience import ExperienceValue
 
 
 class OllamaChatAdapter:
@@ -51,6 +52,30 @@ class OllamaChatAdapter:
         context = request.proposal.dialogue_context
         memory = request.proposal.conversation_memory
         relationship = request.proposal.relationship_information
+        experience = request.proposal.experience_information
+        if experience is not None and experience.selections:
+            messages.append({
+                "role": "system",
+                "content": (
+                    "今回の相手と適用範囲に一致する、別入力で確認済みの経験です。"
+                    "有限の表現方針だけを適用します。能力実行権限、成功や満足の証明、"
+                    "境界の解除や他の話題への一般化には使いません。\n"
+                    + json.dumps([
+                        {"id": selection.item.item_id,
+                         "version": selection.item.version,
+                         "target": selection.item.target.value,
+                         "value": selection.item.value.value,
+                         "instruction": (
+                             "前の公開応答で対象や意図の確認を行い、現在入力はその回答です。"
+                             "回答内容を使って通常の応答を生成し、同じ確認を繰り返さないでください。"
+                             if selection.item.value is ExperienceValue.ASK_FIRST
+                             and request.proposal.experience_confirmation_reference is not None
+                             else selection.item.instruction
+                         )}
+                        for selection in experience.selections
+                    ], ensure_ascii=False)
+                ),
+            })
         if relationship is not None and relationship.selections:
             messages.append({
                 "role": "system",

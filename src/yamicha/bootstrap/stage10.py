@@ -330,9 +330,26 @@ class Stage10TextInputRunner(Stage8TextInputRunner):
         context = proposal.dialogue_context
         memory = proposal.conversation_memory
         relationship = proposal.relationship_information
+        experience = proposal.experience_information
         return json.dumps(
             {
                 "current_input": proposal.input_text,
+                "experience_confirmation_reference": proposal.experience_confirmation_reference,
+                "experience_information": (
+                    None if experience is None else {
+                        "memory_version": experience.memory_version,
+                        "context_id": experience.context_id,
+                        "selections": [
+                            {"item_id": selection.item.item_id,
+                             "version": selection.item.version,
+                             "target": selection.item.target.value,
+                             "value": selection.item.value.value,
+                             "evidence_id": selection.item.evidence_id,
+                             "confirmation_reference": selection.item.confirmation_reference}
+                            for selection in experience.selections
+                        ],
+                    }
+                ),
                 "relationship_information": (
                     None if relationship is None else {
                         "relationship_version": relationship.relationship_version,
