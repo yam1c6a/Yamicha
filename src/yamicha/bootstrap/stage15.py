@@ -86,6 +86,9 @@ class Stage15TextInputRunner(Stage14TextInputRunner):
         proposed_at: ExternalTime,
     ) -> AuxiliaryIntelligenceProposal:
         assert self._relationship_window is not None
+        excluded = self._stage13_core.conversation_memory_dialogue_exclusions(self._current_memory_window)
+        excluded.update(self._stage15_relationship.dialogue_exclusions(event, self._relationship_window))
+        excluded = self._stage13_core.dependent_dialogue_lifecycles(excluded)
         memory_characters = (
             0 if self._current_memory_window is None
             else self._current_memory_window.total_characters
@@ -98,6 +101,7 @@ class Stage15TextInputRunner(Stage14TextInputRunner):
                 - memory_characters - self._relationship_window.total_characters
             ),
             relationship_information=self._relationship_window,
+            excluded_lifecycle_ids=tuple(excluded),
         )
         self._last_dialogue_window = dialogue
         return self._stage15_judgment.propose_dialogue_assistance(

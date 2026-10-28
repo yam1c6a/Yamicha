@@ -1,7 +1,7 @@
 [project]
 name = "yamicha"
-version = "0.6.0"
-description = "Confirmed relationship continuity and governed conversation memory for Yamicha"
+version = "0.7.0"
+description = "Verified continuous dialogue with governed memory, relationships and experience for Yamicha"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = []

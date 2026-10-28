@@ -160,6 +160,8 @@ class Stage7System:
     def run_time_cycle(self) -> CycleOutcome:
         if self._closed:
             raise RuntimeError("stage-7 system is closed")
+        if not self.text_input_runner.persistence_healthy:
+            raise RuntimeError("persistence is unavailable after a failed checkpoint")
         if self.runtime.status is RuntimeStatus.NOT_STARTED:
             self.start()
         if self._startup_opportunity is not None:

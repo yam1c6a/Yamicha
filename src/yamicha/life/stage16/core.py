@@ -6,7 +6,7 @@ from collections.abc import Callable
 from dataclasses import replace
 
 from yamicha.contracts import (
-    BoundaryDecisionMaterial, DecisionDirection, DialogueOutput, DialogueSpeaker,
+    BoundaryDecisionMaterial, DecisionDirection, DialogueOutput, DialogueSpeaker, DialogueTurn,
     ExpressionArtifact, ExpressionReview,
     ExpressionItem, ExpressionMeaning, StatementKind,
     FinalizationStatus, InputQuality, JudgmentContext, JudgmentFinalization,
@@ -26,6 +26,12 @@ class Stage16Core(Stage15Core):
     def __init__(self, **kwargs: object) -> None:
         super().__init__(**kwargs)
         self._experience_request_validator: Callable[[ExperienceChangeRequest], bool] | None = None
+        self._dialogue_input_limit: int | None = None
+
+    def bind_dialogue_input_limit(self, max_characters: int) -> None:
+        if self._dialogue_input_limit is not None or max_characters <= 0:
+            raise ValueError("dialogue input limit must be positive and bound once")
+        self._dialogue_input_limit = max_characters
 
     def bind_experience_validator(self, validator: Callable[[ExperienceChangeRequest], bool]) -> None:
         if self._experience_request_validator is not None:
@@ -34,40 +40,85 @@ class Stage16Core(Stage15Core):
 
     def build_judgment_context(self, cycle: RoutedInputCycle, boundary: BoundaryDecisionMaterial) -> JudgmentContext:
         context = super().build_judgment_context(cycle, boundary)
+        exchange = self._validated_confirmation_exchange(context)
+        if not exchange:
+            return context
+        return replace(context, memory=replace(
+            context.memory, experience_confirmation_reference=exchange[-1].source_reference,
+        ))
+
+    def experience_confirmation_exchange(self, context: JudgmentContext) -> tuple[DialogueTurn, ...]:
+        if context.memory.experience_confirmation_reference is None:
+            return ()
+        exchange = self._validated_confirmation_exchange(context)
+        if not exchange or exchange[-1].source_reference != context.memory.experience_confirmation_reference:
+            return ()
+        return exchange
+
+    def _validated_confirmation_exchange(self, context: JudgmentContext) -> tuple[DialogueTurn, ...]:
+        """Allow one fixed clarification exchange, without restoring its materials.
+
+        Current-query mismatch may hide an otherwise valid exchange. Expired or
+        changed sources, incomplete legacy traces and the input limit still win.
+        """
         window = context.memory.experience_information
         relationship = self._relationship_material_provider
         if window is None or not isinstance(relationship, Stage15Relationship):
-            return context
+            return ()
         active = relationship.active_dialogue_context
         if (active is None or active.counterpart_id != context.event.source_id
-                or active.context_id != window.context_id or not active.turns):
-            return context
+                or active.context_id != window.context_id or len(active.turns) < 2):
+            return ()
         # Only the immediately preceding exchange can supply a clarification.
         # A management input, silence, or another reply ends this one-use path.
         previous = active.turns[-1]
-        if previous.speaker is not DialogueSpeaker.YAMICHA:
-            return context
+        question = active.turns[-2]
+        if (previous.speaker is not DialogueSpeaker.YAMICHA
+                or question.speaker is not DialogueSpeaker.HUMAN
+                or question.lifecycle_id != previous.lifecycle_id):
+            return ()
         expected = {
             self._confirmation_reference(selection.item.item_id, selection.item.version)
             for selection in window.selections
             if selection.item.value is ExperienceValue.ASK_FIRST
         }
         if not expected:
-            return context
+            return ()
         record = next((record for record in reversed(self._records)
                        if record.lifecycle_id == previous.lifecycle_id), None)
         if record is None or not any(
             entry.kind is RecordKind.RESULT and entry.source_reference == previous.source_reference
             for entry in record.entries
         ):
-            return context
+            return ()
         if not any(entry.kind is RecordKind.EXPRESSION
                    and entry.source_owner is ResponsibilityId.CORE
                    and entry.source_reference in expected for entry in record.entries):
-            return context
-        return replace(context, memory=replace(
-            context.memory, experience_confirmation_reference=previous.source_reference,
+            return ()
+        memory = self._stage6_memory
+        assert isinstance(memory, Stage16Memory)
+        relationship_window = context.relationship.relationship_information
+        if relationship_window is None:
+            return ()
+        memory_window = memory.selected_window(context.lifecycle_id)
+        excluded = self.conversation_memory_dialogue_exclusions(memory_window, exclude_unselected=False)
+        excluded.update(record.lifecycle_id for record in memory.conversation_memory_governance_records)
+        excluded.update(relationship.dialogue_exclusions(
+            context.event, relationship_window, exclude_unselected=False,
         ))
+        active_experiences = {(item.item_id, item.version) for item in memory.experience_items if item.active}
+        excluded.update(usage.lifecycle_id for usage in memory.experience_usages
+                        if not set(usage.item_versions).issubset(active_experiences))
+        if previous.lifecycle_id in self.dependent_dialogue_lifecycles(excluded):
+            return ()
+        exchange = (question, previous)
+        characters = (len(context.event.meaning.normalized_text)
+                      + sum(len(turn.text) for turn in exchange)
+                      + window.total_characters + relationship_window.total_characters
+                      + (0 if memory_window is None else memory_window.total_characters))
+        if self._dialogue_input_limit is None or characters > self._dialogue_input_limit:
+            return ()
+        return exchange
 
     @staticmethod
     def _confirmation_reference(item_id: str, version: int) -> str:

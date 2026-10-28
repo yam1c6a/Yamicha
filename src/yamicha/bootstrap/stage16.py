@@ -94,6 +94,9 @@ class Stage16TextInputRunner(Stage15TextInputRunner):
             if turn.speaker is DialogueSpeaker.HUMAN
             and self._stage16_judgment.is_management_command(turn.text)
         )
+        excluded.update(self._stage16_core.conversation_memory_dialogue_exclusions(self._current_memory_window))
+        excluded.update(self._stage15_relationship.dialogue_exclusions(event, self._relationship_window))
+        excluded = self._stage16_core.dependent_dialogue_lifecycles(excluded)
         memory_characters = 0 if self._current_memory_window is None else self._current_memory_window.total_characters
         dialogue = self._stage15_relationship.select_dialogue_window(
             event, max_exchanges=self._dialogue_max_exchanges,
@@ -102,6 +105,7 @@ class Stage16TextInputRunner(Stage15TextInputRunner):
                             - window.total_characters),
             relationship_information=self._relationship_window,
             excluded_lifecycle_ids=tuple(excluded),
+            required_exchange=self._stage16_core.experience_confirmation_exchange(context),
         )
         self._last_dialogue_window = dialogue
         constraints = self._intelligence_constraints
@@ -244,6 +248,7 @@ def make_stage16_system(**stage15_options: object) -> Stage16System:
         **stage15_options,
     )
     base.core.bind_experience_validator(base.judgment.issued_experience_request)
+    base.core.bind_dialogue_input_limit(base.intelligence_constraints.max_input_characters)
     runner = Stage16TextInputRunner(
         protection_boundary=base.protection_boundary, sensation=base.sensation,
         core=base.core, judgment=base.judgment, language=base.language,

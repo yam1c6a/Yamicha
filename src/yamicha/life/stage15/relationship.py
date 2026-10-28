@@ -280,6 +280,7 @@ class Stage15Relationship(Stage14Relationship):
         max_characters: int,
         relationship_information: RelationshipInformationWindow | None = None,
         excluded_lifecycle_ids: tuple[str, ...] = (),
+        required_exchange: tuple[DialogueTurn, ...] = (),
     ) -> DialogueContextWindow:
         context = self.ensure_active_context(event)
         current_characters = len(event.meaning.normalized_text)
@@ -291,30 +292,14 @@ class Stage15Relationship(Stage14Relationship):
         )
         if relationship_window.current_input_reference != event.event_id:
             raise ValueError("relationship dialogue scope belongs to another input")
-        selected_relationship_versions = {
-            (selection.item.item_id, selection.item.version)
-            for selection in relationship_window.selections
-        }
-        excluded = {record.lifecycle_id for record in self._relationship_changes}
+        excluded = self.dialogue_exclusions(event, relationship_window)
         excluded.update(excluded_lifecycle_ids)
-        excluded.update(
-            turn.lifecycle_id for turn in context.turns
-            if turn.speaker is DialogueSpeaker.HUMAN
-            and Stage15Judgment.is_relationship_command(turn.text)
-        )
-        for usage in self._relationship_usages.values():
-            if any(
-                (item_id, version) not in selected_relationship_versions
-                or item_id not in self._relationship_items
-                or self._relationship_items[item_id].version != version
-                or not self._relationship_items[item_id].is_effective_at(event.received_at)
-                or (
-                    self._relationship_items[item_id].scope_keywords
-                    and not any(word in event.meaning.normalized_text for word in self._relationship_items[item_id].scope_keywords)
-                )
-                for item_id, version in usage.item_versions
-            ):
-                excluded.add(usage.lifecycle_id)
+        if required_exchange:
+            if (len(required_exchange) != 2 or context.turns[-2:] != required_exchange
+                    or required_exchange[0].lifecycle_id != required_exchange[1].lifecycle_id
+                    or current_characters + sum(len(turn.text) for turn in required_exchange) > max_characters):
+                raise ValueError("required exchange must be the current bounded dialogue tail")
+            excluded.discard(required_exchange[0].lifecycle_id)
         exchanges: list[list[DialogueTurn]] = []
         for turn in context.turns:
             if turn.lifecycle_id in excluded:
@@ -338,6 +323,36 @@ class Stage15Relationship(Stage14Relationship):
             current_input_characters=current_characters,
             max_exchanges=max_exchanges, max_characters=max_characters,
         )
+
+    def dialogue_exclusions(
+        self, event: SensoryEvent, relationship_window: RelationshipInformationWindow,
+        *, exclude_unselected: bool = True,
+    ) -> set[str]:
+        context = self.ensure_active_context(event)
+        selected_relationship_versions = {
+            (selection.item.item_id, selection.item.version)
+            for selection in relationship_window.selections
+        }
+        excluded = {record.lifecycle_id for record in self._relationship_changes}
+        excluded.update(
+            turn.lifecycle_id for turn in context.turns
+            if turn.speaker is DialogueSpeaker.HUMAN
+            and Stage15Judgment.is_relationship_command(turn.text)
+        )
+        for usage in self._relationship_usages.values():
+            if any(
+                (exclude_unselected and (item_id, version) not in selected_relationship_versions)
+                or item_id not in self._relationship_items
+                or self._relationship_items[item_id].version != version
+                or not self._relationship_items[item_id].is_effective_at(event.received_at)
+                or (
+                    exclude_unselected and self._relationship_items[item_id].scope_keywords
+                    and not any(word in event.meaning.normalized_text for word in self._relationship_items[item_id].scope_keywords)
+                )
+                for item_id, version in usage.item_versions
+            ):
+                excluded.add(usage.lifecycle_id)
+        return excluded
 
     def persistence_snapshot(self) -> RelationshipPersistenceSnapshot:
         return replace(

@@ -127,6 +127,11 @@ class Stage14TextInputRunner(Stage13TextInputRunner):
             field.name: getattr(base, field.name)
             for field in fields(Stage13InputOutcome)
         }
+        if base.lifecycle_record is not None:
+            values["lifecycle_record"] = next(
+                record for record in reversed(self._stage14_core.lifecycle_records)
+                if record.record_id == base.lifecycle_record.record_id
+            )
         return Stage14InputOutcome(
             **values,
             conversation_memory_governance_request=self._governance_request,
@@ -153,6 +158,9 @@ class Stage14TextInputRunner(Stage13TextInputRunner):
         if pending is not None and self._stage14_judgment.is_confirmation(
             event.meaning.normalized_text
         ):
+            dependent_lifecycles = self._stage14_core.conversation_memory_deletion_lifecycles(
+                {item_id for item_id, _ in pending.request.target_items}
+            )
             source_references = self._target_source_references(
                 pending.request.target_items
             )
@@ -169,6 +177,7 @@ class Stage14TextInputRunner(Stage13TextInputRunner):
                 lifecycle_ids=(
                     pending.request.lifecycle_id,
                     event.correlation_id,
+                    *dependent_lifecycles,
                 ),
             )
             return

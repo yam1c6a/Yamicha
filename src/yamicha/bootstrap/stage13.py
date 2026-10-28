@@ -148,6 +148,9 @@ class Stage13TextInputRunner(Stage12TextInputRunner):
                 self._intelligence_constraints.max_input_characters
                 - memory_characters
             ),
+            excluded_lifecycle_ids=tuple(self._stage13_core.dependent_dialogue_lifecycles(
+                self._stage13_core.conversation_memory_dialogue_exclusions(self._current_memory_window)
+            )),
         )
         self._last_dialogue_window = dialogue_window
         return self._stage13_judgment.propose_dialogue_assistance(

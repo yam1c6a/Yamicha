@@ -115,6 +115,7 @@ class Stage12Relationship(Stage7Relationship):
         *,
         max_exchanges: int,
         max_characters: int,
+        excluded_lifecycle_ids: tuple[str, ...] = (),
     ) -> DialogueContextWindow:
         context = self.ensure_active_context(event)
         current_characters = len(event.meaning.normalized_text)
@@ -122,6 +123,8 @@ class Stage12Relationship(Stage7Relationship):
             raise ValueError("current input exceeds the dialogue context limit")
         exchanges: list[list[DialogueTurn]] = []
         for turn in context.turns:
+            if turn.lifecycle_id in excluded_lifecycle_ids:
+                continue
             if not exchanges or exchanges[-1][0].lifecycle_id != turn.lifecycle_id:
                 exchanges.append([turn])
             else:
